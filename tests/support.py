@@ -116,6 +116,9 @@ def legal_state(
     state.table_defenses = np.array(list(table_defenses), dtype=np.int16)
     state.table_defense_count = len(state.table_defenses)
     state.attacker = attacker
+    # `trump` is a suit index, so the fixture's trump card is derived from it rather than
+    # supplied separately. Passing a card id here is the defect the Stage 05 report records.
+    state.trump_card = min((c for c in range(deck_size) if c % 4 == trump % 4), default=-1)
 
     assert rules.check_invariants(state) == 0, "fixture is not a legal state"
     return state

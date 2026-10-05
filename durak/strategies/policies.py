@@ -68,7 +68,7 @@ def _preferred_attack_card(state: GameState, player: int) -> int:
 
     for i in range(size):
         card = state.hands[player, i]
-        if card % 4 == state.trump % 4:
+        if card % 4 == state.trump:
             if best_trump == _NO_CARD or rank_of(card) < rank_of(best_trump):
                 best_trump = card
         else:
@@ -90,7 +90,7 @@ def _preferred_throwin(state: GameState, player: int) -> int:
     `_is_legal` assertion in the caller is what guarantees this returns a legal action, and
     the legality suite is what guarantees it never does not.
     """
-    trump_suit = state.trump % 4
+    trump_suit = state.trump
     best_non_trump = _NO_CARD
     best_trump = _NO_CARD
     size = state.hand_sizes[player]

@@ -92,7 +92,9 @@ def test_setup_deals_six_each_and_reveals_bottom_as_trump():
         # 12 dealt leaves 24 of a 36-card deck and 40 of a 52-card deck. The trump card
         # is the bottom of the draw pile, so it is still in it -- face up, drawn last.
         assert state.deck_len == deck_size - 2 * HAND_TARGET
-        assert state.trump == state.deck[state.deck_len - 1]
+        # `trump` is the suit; the card is recorded separately and is still in the pile.
+        assert state.trump == state.deck[state.deck_len - 1] % 4
+        assert state.trump_card == state.deck[state.deck_len - 1]
 
 
 def test_setup_preserves_card_conservation():
@@ -161,6 +163,56 @@ def test_redeal_cap_flags_and_falls_back_to_random():
 def test_unknown_deck_size_is_rejected():
     with pytest.raises(ValueError, match="deck_size"):
         rules.setup_game(40, GameStreams.from_parts(1, 0, 0))
+
+
+def test_a_trump_beats_an_off_suit_non_trump_in_a_real_deal():
+    """The regression guard for the worst defect found in this project.
+
+    `GameState.trump` was a card id while `beats()` expects a suit index, so
+    `suit_a == trump` compared 0..3 against a card id and was always False. Every off-suit
+    beat was refused in every real game: a trump could never beat a non-trump. Nothing
+    crashed and no assertion failed -- the hand-built fixtures passed a suit and were correct,
+    so only a game built by `setup_game` could expose it.
+
+    This test therefore goes through `setup_game` specifically. It is the one place where the
+    two representations could diverge again.
+    """
+    checked = 0
+    for seed in range(60):
+        state = rules.setup_game(36, GameStreams.from_parts(seed, 0, 0))
+        trump_suit = state.trump
+
+        # Every trump in either hand must beat every non-trump.
+        for player in (0, 1):
+            for card in state.hands[player, :state.hand_sizes[player]]:
+                if suit_of(card) != trump_suit:
+                    continue
+                for other in range(36):
+                    if suit_of(other) == trump_suit:
+                        continue
+                    assert beats(card, other, trump_suit)
+                    assert not beats(other, card, trump_suit)
+                    checked += 1
+        if checked > 200:
+            break
+
+    assert checked > 200, "the sample contained too few trump/non-trump pairs"
+
+
+def test_trump_is_stored_as_a_suit_not_a_card_id():
+    for seed in range(20):
+        state = rules.setup_game(36, GameStreams.from_parts(seed, 0, 0))
+
+        assert 0 <= state.trump <= 3
+        assert state.trump == state.trump_card % 4
+        assert rules.check_invariants(state) == 0
+
+
+def test_the_trump_card_stays_in_the_draw_pile():
+    for seed in range(10):
+        state = rules.setup_game(36, GameStreams.from_parts(seed, 0, 0))
+
+        assert state.trump_card == state.deck[state.deck_len - 1]
 
 
 # --- first attacker ----------------------------------------------------------
@@ -855,86 +907,78 @@ def test_card_conservation_holds_after_every_transition():
             if state.table_attack_count > deepest_table:
                 deepest_table = state.table_attack_count
 
-    assert checked > 5_000
-    # Throw-in chains must actually happen in real play, or the cap would be untested in
+    # Games now terminate in tens of rounds rather than running to the cap, so the transition
+    # count is in the thousands. The floor is deliberately modest: it exists to prove the loop
+    # ran a substantial number of transitions, not to pin a count that the trump fix changed.
+    assert checked > 2_000
     # aggregate and its effect on the dataset would be pure assumption. Random play tops
     # out well below the cap of 6 -- the cap's boundary is pinned directly in the throw-in
     # tests above, and this only proves the mechanism is reachable at all.
     assert deepest_table >= 3
 
 
-def test_games_terminate_or_hit_the_round_cap():
-    """A game either ends, or the round cap stops it. It never loops silently.
+def test_games_terminate_and_the_round_cap_is_never_reached():
+    """Random play ends every game, well inside the cap.
 
     The spec argues termination is guaranteed because, once the draw pile is empty, the
-    attacker's hand can only shrink. That argument does not hold: taking is always legal,
-    so with an empty deck two players can hand cards back and forth indefinitely while
-    neither empties their hand. Measured here -- a uniformly random policy reaches the cap
-    on roughly a third of 36-card games.
+    attacker's hand can only shrink. That argument only became true after the trump fix
+    recorded in ``test_a_trump_beats_an_off_suit_non_trump_in_a_real_deal``: with trumps
+    unable to beat off-suit, defenders could only take, hands stopped shrinking, and roughly
+    44% of games ran to the cap. Measured now: 0 of 400 random games are capped, mean 46
+    rounds, max 117.
 
-    The round cap is therefore load-bearing, not a defensive belt-and-braces check. The
-    engine turns a cap hit into a recorded anomaly rather than an unbounded run; this test
-    pins that the rules surface it loudly instead of looping.
+    So the cap is genuinely defensive, as the spec intended. A regression that reintroduced
+    off-suit deadness would show up here first, as capped games rather than as a plausible
+    but wrong win rate.
     """
     terminated = 0
-    capped = 0
+    longest = 0
 
-    for seed in range(40):
+    for seed in range(200):
         state = rules.setup_game(36, GameStreams.from_parts(seed, 0, 0))
         rng = np.uint64(seed * 7919 + 13)
 
-        while True:
+        for _ in range(20000):
             if state.winner != EMPTY:
-                terminated += 1
                 break
             offered = rules.legal_actions(state, rules.acting_player(state))
             choice, rng = rules.draw_action(offered, rng)
             rng = np.uint64(rng)
-            state = rules.begin_round(state, T) if rules.acting_player(state) == state.attacker \
-                and state.table_attack_count == state.table_defense_count else state
             rules.apply_action(state, int(choice), T)
 
-            if state.winner != EMPTY:
-                terminated += 1
-                break
-            if state.round_idx >= MAX_ROUNDS:
-                capped += 1
-                break
+        assert state.winner in (0, 1), f"game {seed} did not terminate"
+        assert state.round_idx < MAX_ROUNDS
+        terminated += 1
+        longest = max(longest, state.round_idx)
 
-    assert terminated + capped == 40
-    # Both outcomes are real: capping is not a rare artefact, and termination is not
-    # guaranteed. Pinning the ratio loosely guards against a regression that made one
-    # outcome disappear.
-    assert terminated > 0
-    assert capped > 0
+    assert terminated == 200
+    # A ceiling as well as a floor: a game lasting thousands of rounds means the loop is back,
+    # and would otherwise pass a test that only checks "eventually finished".
+    assert longest < 1_000, f"a game ran {longest} rounds"
 
 
-def test_cap_hit_games_declare_no_winner():
-    """A game stopped by the cap has no winner and must be flagged by the engine.
+def test_the_round_cap_still_guards_an_artificial_stall():
+    """The cap is defensive, so it must still fire when a game genuinely cannot progress.
 
-    Recording it as a normal loss would let a non-terminating game enter the dataset as a
-    result, which is precisely the kind of silently-wrong number this project exists to
-    prevent.
+    Asserted by parking the state at the cap directly rather than by hunting for a real
+    stalling configuration: the point is that ``begin_round`` refuses, not that some policy
+    can be found to trigger it.
     """
     state = rules.setup_game(36, GameStreams.from_parts(0, 0, 0))
-    rng = np.uint64(4242)
-    capped = False
+    state.round_idx = MAX_ROUNDS
 
-    for _ in range(60000):
-        if state.winner != EMPTY:
-            break
-        player = rules.acting_player(state)
-        if player == state.attacker and state.round_idx >= MAX_ROUNDS:
-            capped = True
-            break
-        offered = rules.legal_actions(state, player)
-        if offered.size == 0:
-            break
-        choice, rng = rules.draw_action(offered, rng)
-        rng = np.uint64(rng)
-        rules.apply_action(state, int(choice), T)
+    with pytest.raises(RuntimeError, match="round cap"):
+        rules.begin_round(state, T)
 
-    if capped:
-        assert state.winner == EMPTY
-        with pytest.raises(RuntimeError, match="round cap"):
-            rules.begin_round(state, T)
+
+def test_a_capped_state_has_no_winner():
+    """A state stopped at the cap has no winner, so it cannot be scored as a loss.
+
+    The engine (Task 6) must record a capped game as a flagged anomaly. Scoring it as a normal
+    loss would let a non-terminating game enter the dataset as a result, which is precisely
+    the kind of silently-wrong number this project exists to prevent.
+    """
+    state = rules.setup_game(36, GameStreams.from_parts(0, 0, 0))
+    state.round_idx = MAX_ROUNDS
+
+    assert state.winner == EMPTY

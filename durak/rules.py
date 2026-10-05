@@ -92,6 +92,8 @@ INV_LOSER_NOT_EMPTY = 3
 INV_HAND_CAPACITY = 4
 INV_DECK_LEN = 5
 INV_ROUND_BOUND = 6
+INV_TRUMP_IS_SUIT = 7
+INV_TRUMP_CARD_IN_PLAY = 8
 
 INVARIANT_NAMES: Tuple[str, ...] = (
     "card_conservation",
@@ -101,6 +103,11 @@ INVARIANT_NAMES: Tuple[str, ...] = (
     "hand_within_capacity",
     "deck_len_within_array",
     "round_index_within_cap",
+    # `trump` must be a suit index, not the trump card id. This bit exists because getting it
+    # wrong is silent: every off-suit beat is simply refused, no test fails, and the whole
+    # dataset shifts. It is the cheapest possible guard against that specific regression.
+    "trump_is_a_suit_index",
+    "trump_card_is_in_play",
 )
 
 
@@ -131,7 +138,13 @@ _GAME_STATE_SPEC = [
     ("deck", types.int16[::1]),
     ("deck_len", types.int64),
     ("initial_deck", types.int64),
+    # `trump` is the trump SUIT (0..3), not the trump card. `beats()` compares
+    # `suit_a == trump`, so storing the card id here silently disabled the entire off-suit
+    # rule: a trump could never beat a non-trump in any real game. The card itself is kept
+    # separately in `trump_card`, because which card was turned over is worth recording and
+    # because the card stays in the draw pile to be drawn last.
     ("trump", types.int64),
+    ("trump_card", types.int64),
     ("hands", types.int16[:, :]),
     ("hand_sizes", types.int8[::1]),
     ("discard", types.int16[::1]),
@@ -176,11 +189,13 @@ class GameState:
     random draws.
     """
 
-    def __init__(self, deck, hands, hand_sizes, initial_deck, trump, throwin_defense_ranks):
+    def __init__(self, deck, hands, hand_sizes, initial_deck, trump, throwin_defense_ranks,
+                 trump_card=-1):
         self.deck = deck
         self.deck_len = len(deck)
         self.initial_deck = initial_deck
         self.trump = trump
+        self.trump_card = trump_card
         self.hands = hands
         self.hand_sizes = hand_sizes
         self.discard = np.empty(0, dtype=np.int16)
@@ -292,7 +307,11 @@ def setup_game(
         # because it is still a card in play -- removing it would break card conservation
         # by exactly one and quietly invalidate the strongest invariant in the project.
         draw_pile = deck[2 * HAND_TARGET :].copy()
-        trump = int(draw_pile[len(draw_pile) - 1])
+        trump_card = int(draw_pile[len(draw_pile) - 1])
+        # The *suit* is what the rules operate on. Storing the card id here instead is the
+        # defect recorded in the Stage 05 report: `beats` compares a suit index against this
+        # field, and a card id never equals a suit, so every off-suit beat was refused.
+        trump = trump_card % 4
 
         if not force_first and not _holds_all_six_trumps(hands, hand_sizes, trump):
             break
@@ -312,6 +331,7 @@ def setup_game(
         deck_size,
         trump,
         throwin_defense_ranks,
+        trump_card,
     )
     state.redeals = redeals
     state.flag_redeals_exceeded = exceeded
@@ -345,7 +365,7 @@ def assign_first_attacker(state: GameState) -> GameState:
     chosen uniformly at random and the fallback recorded, because that field is the only
     way a later analysis can distinguish this distribution from a dealt one.
     """
-    trump_suit = state.trump % 4
+    trump_suit = state.trump
     first = _lowest_trump(state.hands, state.hand_sizes, 0, trump_suit)
     second = _lowest_trump(state.hands, state.hand_sizes, 1, trump_suit)
 
@@ -431,7 +451,7 @@ def trumps_in_hand(state: GameState, player: int) -> int:
     size = int(state.hand_sizes[player])
     count = 0
     for i in range(size):
-        if state.hands[player, i] % 4 == state.trump % 4:
+        if state.hands[player, i] % 4 == state.trump:
             count += 1
     return count
 
@@ -439,7 +459,7 @@ def trumps_in_hand(state: GameState, player: int) -> int:
 @njit(cache=False)
 def lowest_trump(state: GameState, player: int) -> int:
     """The lowest-ranked trump in a player's hand, or ``EMPTY`` if they hold none."""
-    return _lowest_trump(state.hands, state.hand_sizes, player, state.trump % 4)
+    return _lowest_trump(state.hands, state.hand_sizes, player, state.trump)
 
 
 # --- whose turn --------------------------------------------------------------
@@ -779,6 +799,15 @@ def check_invariants(state: GameState) -> int:
 
     if state.round_idx > MAX_ROUNDS:
         mask |= 1 << INV_ROUND_BOUND
+
+    if state.trump < 0 or state.trump > 3:
+        mask |= 1 << INV_TRUMP_IS_SUIT
+
+    if state.trump_card >= 0 and state.trump_card != state.trump:
+        # The trump card must belong to the trump suit. Cheap, and it catches the two fields
+        # being swapped or one of them being derived from the other by mistake.
+        if state.trump_card % 4 != state.trump:
+            mask |= 1 << INV_TRUMP_CARD_IN_PLAY
 
     return mask
 
