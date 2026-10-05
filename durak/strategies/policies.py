@@ -54,7 +54,7 @@ from durak.strategies.base import InfoMode, StrategyId
 _NO_CARD = 1 << 20
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _preferred_attack_card(state: GameState, player: int) -> int:
     """The lowest non-trump card in `player`'s hand, else the lowest trump.
 
@@ -80,7 +80,7 @@ def _preferred_attack_card(state: GameState, player: int) -> int:
     return best_trump
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _preferred_throwin(state: GameState, player: int) -> int:
     """The best rank-matching card in hand, or ``_NO_CARD`` when none may be thrown.
 
@@ -111,7 +111,7 @@ def _preferred_throwin(state: GameState, player: int) -> int:
     return best_trump
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _rank_on_table(state: GameState, card: int) -> bool:
     """Whether `card`'s rank already appears among the table's attack or defense cards.
 
@@ -130,7 +130,7 @@ def _rank_on_table(state: GameState, card: int) -> bool:
     return False
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _lowest_beater(state: GameState, player: int, target: int) -> int:
     """The lowest card in `player`'s hand that beats `target`, or ``_NO_CARD``."""
     best = _NO_CARD
@@ -144,7 +144,7 @@ def _lowest_beater(state: GameState, player: int, target: int) -> int:
     return best
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _first_legal(state: GameState, player: int, kind: int) -> int:
     """The first legal action of `kind` in the rules' own enumeration order, else -1.
 
@@ -160,7 +160,7 @@ def _first_legal(state: GameState, player: int, kind: int) -> int:
     return -1
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _any_legal(state: GameState, player: int) -> int:
     """The first legal action of any kind, else -1.
 
@@ -175,7 +175,7 @@ def _any_legal(state: GameState, player: int) -> int:
     return int(actions[0])
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _preferred_or_fallback(state: GameState, player: int, preferred: int, kind: int) -> int:
     """`preferred` if the rules list it as legal, else the first legal action of `kind`.
 
@@ -189,7 +189,7 @@ def _preferred_or_fallback(state: GameState, player: int, preferred: int, kind: 
     return _first_legal(state, player, kind)
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def _is_legal(state: GameState, player: int, action: int) -> bool:
     """Whether `action` appears in the acting player's legal list."""
     actions = legal_actions(state, player)
@@ -199,7 +199,7 @@ def _is_legal(state: GameState, player: int, action: int) -> bool:
     return False
 
 
-@njit(cache=False)
+@njit(cache=True)
 def policy_auto_attack(state: GameState, player: int, strategy_id: int, info_mode: int,
                        rng_state: np.uint64) -> np.int32:
     """Attacks with the lowest non-trump; always takes when defending.
@@ -221,7 +221,7 @@ def policy_auto_attack(state: GameState, player: int, strategy_id: int, info_mod
     return np.int32(action if action >= 0 else fallback)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def policy_auto_defend(state: GameState, player: int, strategy_id: int, info_mode: int,
                        rng_state: np.uint64) -> np.int32:
     """Beats with the lowest beater when defending; attacks with the lowest non-trump.
@@ -249,7 +249,7 @@ def policy_auto_defend(state: GameState, player: int, strategy_id: int, info_mod
     return np.int32(action if action >= 0 else fallback)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def policy_random(state: GameState, player: int, strategy_id: int, info_mode: int,
                   rng_state: np.uint64) -> np.int32:
     """Uniform over the legal actions, including `TAKE` and `STOP`.
@@ -278,7 +278,7 @@ def policy_random(state: GameState, player: int, strategy_id: int, info_mode: in
     return np.int32(actions[int(index)])
 
 
-@njit(cache=False)
+@njit(cache=True)
 def policy_greedy(state: GameState, player: int, strategy_id: int, info_mode: int,
                   rng_state: np.uint64) -> np.int32:
     """The plan's strong, simple, information-free reference (spec 5.5).

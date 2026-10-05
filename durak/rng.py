@@ -134,7 +134,7 @@ def mix_seed(*parts: int) -> int:
     return int(_finalise(np.uint64(state)))
 
 
-@njit(cache=False)
+@njit(cache=True)
 def mix_seed3(run_seed: int, pairing_index: int, game_index: int):
     """Seed for the three coordinates that identify a game.
 
@@ -148,7 +148,7 @@ def mix_seed3(run_seed: int, pairing_index: int, game_index: int):
     return _finalise(state)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _fold(state: np.uint64, component: np.uint64) -> np.uint64:
     """Fold one seed component into the running state.
 
@@ -164,7 +164,7 @@ def _fold(state: np.uint64, component: np.uint64) -> np.uint64:
     return folded ^ (folded >> _S30)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _finalise(state: np.uint64) -> np.uint64:
     """Avalanche a 64-bit value so every output bit depends on every input bit.
 
@@ -188,13 +188,13 @@ def _finalise(state: np.uint64) -> np.uint64:
 # remember that.
 
 
-@njit(cache=False)
+@njit(cache=True)
 def next_u64(state: np.uint64):
     """One 64-bit draw and the next state. The primitive the engine threads."""
     return _finalise(state), state + _GAMMA
 
 
-@njit(cache=False)
+@njit(cache=True)
 def next_below(state: np.uint64, bound: int):
     """Unbiased draw in ``[0, bound)`` and the next state.
 
@@ -219,7 +219,7 @@ def next_below(state: np.uint64, bound: int):
     return np.int64(0), state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def next_float(state: np.uint64):
     """Uniform draw in ``[0, 1)`` with 53 bits of precision, and the next state.
 
@@ -304,11 +304,11 @@ class GameStreams:
         scheduling, wall-clock time, or process identity. That is what makes a
         1-worker run and an 8-worker run produce byte-identical output.
         """
-        base = mix_seed3(run_seed, pairing_index, game_index)
+        base, first, second = game_stream_states(run_seed, pairing_index, game_index)
         return cls(
-            deal=RngStream(mix_seed(base, 0)),
-            player0=RngStream(mix_seed(base, 1)),
-            player1=RngStream(mix_seed(base, 2)),
+            deal=RngStream(base),
+            player0=RngStream(first),
+            player1=RngStream(second),
             run_seed=run_seed,
             pairing_index=pairing_index,
             game_index=game_index,
@@ -331,6 +331,60 @@ class GameStreams:
         self.deal.restore(snapshot[0])
         self.player0.restore(snapshot[1])
         self.player1.restore(snapshot[2])
+
+
+@njit(cache=True)
+def mix_seed_stream(base: int, index: int) -> int:
+    """Derive one named stream from a game's base seed.
+
+    Fixed arity, unlike :func:`mix_seed`, because Numba cannot type ``*parts``. The engine seeds
+    every game from here, so this is the signature that actually runs; :func:`mix_seed` delegates
+    to it for the same reason :func:`mix_seed3` exists.
+    """
+    return int(_finalise(_fold(_fold(np.uint64(0), np.uint64(int(base) & 0xFFFFFFFFFFFFFFFF)),
+                             np.uint64(index))))
+
+
+@njit(cache=True)
+def game_stream_states(run_seed: int, pairing_index: int, game_index: int) -> tuple:
+    """The three stream states for one game, as a `(deal, p0, p1)` tuple of ``uint64``.
+
+    The compiled form of :meth:`GameStreams.from_parts`, and the single implementation of the
+    derivation. The engine cannot construct a ``GameStreams`` at all -- it is a Python class, and
+    a Python object does not cross into ``nopython`` mode -- so a second, compiled-only derivation
+    would have been needed. Instead this function is the derivation and ``from_parts`` calls it,
+    so there is nothing to drift.
+    """
+    base = mix_seed3(run_seed, pairing_index, game_index)
+    # `mix_seed3` hands back a plain Python int to an interpreted caller, and above 2**63-1 that
+    # int does not fit the int64 Numba would infer for it -- it would then be folded as a
+    # *negative* number and the two execution modes would derive different streams. Masking here
+    # keeps the operand uint64 in both modes, which is the whole of rule 4 in the module
+    # docstring. Found by the engine equivalence probe, not by a unit test: nothing about a
+    # single-mode run can see it.
+    masked = np.uint64(int(base) & 0xFFFFFFFFFFFFFFFF)
+    return (
+        np.uint64(mix_seed_stream(masked, 0)),
+        np.uint64(mix_seed_stream(masked, 1)),
+        np.uint64(mix_seed_stream(masked, 2)),
+    )
+
+
+@njit(cache=True)
+def shuffle_inplace_with_state(cards: np.ndarray, state: np.uint64) -> np.uint64:
+    """Fisher-Yates over card ids, threading the state. Returns the next state.
+
+    The compiled counterpart of :func:`shuffle_inplace`, and again the single implementation:
+    the deal has to run inside compiled code, so the arithmetic lives here and the Python
+    wrapper delegates. Writing the swap loop twice would be two shuffles free to disagree, and
+    the deal is what every recorded game starts from.
+    """
+    for i in range(len(cards) - 1, 0, -1):
+        j, state = next_below(state, i + 1)
+        held = cards[i]
+        cards[i] = cards[j]
+        cards[j] = held
+    return state
 
 
 def shuffle_inplace(cards: np.ndarray, rng: RngStream) -> None:

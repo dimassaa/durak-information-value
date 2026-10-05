@@ -114,20 +114,28 @@ def test_setup_is_deterministic_for_a_seed():
     assert first.attacker == second.attacker
 
 
-def test_setup_uses_three_separate_streams():
-    # The deal must draw from the deal stream alone. Consuming a player's stream during
-    # setup would make a run differing in one strategy differ in the deal too, breaking
-    # the paired design the primary metric depends on.
+def test_setup_leaves_the_callers_streams_untouched():
+    """The deal must not consume the caller's `GameStreams`, nor a player's stream.
+
+    The deal draws from the deal stream alone, and its resulting stream position belongs to the
+    *game* -- it is carried in `state.rng_state` -- rather than to whatever object the caller
+    happened to pass in. So a caller can reuse one bundle, and a player's stream is provably
+    untouched by the deal.
+
+    The second half matters most: if the deal consumed a player's stream, a run differing in one
+    strategy would differ in the deal too, and the paired comparison the primary metric depends
+    on would be silently broken.
+    """
     streams = GameStreams.from_parts(5, 0, 0)
-    deal_before = streams.deal.snapshot()
-    p0_before = streams.player0.snapshot()
-    p1_before = streams.player1.snapshot()
+    before = streams.snapshot()
 
-    rules.setup_game(36, streams)
+    state = rules.setup_game(36, streams)
 
-    assert streams.deal.snapshot() != deal_before
-    assert streams.player0.snapshot() == p0_before
-    assert streams.player1.snapshot() == p1_before
+    assert streams.snapshot() == before, "the deal consumed the caller's streams"
+    assert state.rng_p0 == np.uint64(before[1]), "the deal touched player 0's stream"
+    assert state.rng_p1 == np.uint64(before[2]), "the deal touched player 1's stream"
+    # The deal's own position is recorded on the state, advanced past the shuffle.
+    assert int(state.rng_state) != before[0]
 
 
 def test_redeal_when_player_holds_all_six_trumps():

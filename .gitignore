@@ -1,5 +1,8 @@
 # Python
 __pycache__/
+# Numba writes its compilation cache here when the source dir is writable.
+*.nbi
+*.nbc
 *.py[cod]
 .venv/
 venv/

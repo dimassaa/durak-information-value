@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pytest-xdist>=3.0"]
 
 [tool.setuptools]
 packages = ["durak", "durak.strategies", "analysis", "reports"]
@@ -32,4 +32,16 @@ markers = [
 # signal only. Timing numbers are collected deliberately via `pytest -m perf`,
 # because wall-clock thresholds on shared hardware fail for reasons unrelated to
 # the code under test.
-addopts = "-m 'not perf' --strict-markers -q"
+#
+# `-n auto` runs the suite across cores by default: 87% of it is three long tests, so serial
+# execution made an edit-check cycle cost minutes. Pass `-n 0` for serial when a failure looks
+# order-dependent, or `--lf` to re-run only what last failed.
+addopts = "-m 'not perf' --strict-markers -q -n auto"
+
+# Numba cannot cache any function that touches the `GameState` jitclass ("dynamic globals"), so
+# a cold run pays ~12 s of compilation for the engine chain. That warning is emitted once per
+# function, which drowns the actual test output; it is not actionable from here, and the
+# `.gitignore` covers the cache files it does manage to write.
+filterwarnings = [
+    "ignore:Cannot cache compiled function:Warning",
+]

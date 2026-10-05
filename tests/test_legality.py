@@ -254,19 +254,37 @@ def test_deterministic_policies_ignore_the_rng_stream(strategy_id):
 
 
 def test_random_consumes_the_stream_and_varies():
+    """`RANDOM` must actually vary, over positions where varying is possible.
+
+    Scans for a position with more than one legal action rather than pinning a seed. A fixed
+    position can have exactly one legal move -- an answered table where the attacker holds no
+    rank-matching card is forced to stop -- and a draw from a one-element list is trivially
+    constant. Asserting on such a position would pass for a policy that ignored its stream
+    entirely, which is the bug the test exists to catch.
+    """
     policy = get_policy(RANDOM)
-    state = random_position(seed=7)
-    player = rules.acting_player(state)
+    chosen = None
+
+    for seed in range(40):
+        state = random_position(seed=seed)
+        if state.winner != rules.EMPTY:
+            continue
+        player = rules.acting_player(state)
+        if len(rules.legal_actions(state, player)) > 2:
+            chosen = (state, player)
+            break
+
+    assert chosen is not None, "no position with a real choice was found in the sample"
+    state, player = chosen
 
     draws = {
         int(policy(state, player, RANDOM, int(InfoMode.NONE), np.uint64(seed)))
-        for seed in range(200)
+        for seed in range(300)
     }
 
     # A policy that ignored its stream would return one action forever, and `RANDOM vs
-    # RANDOM = 0.5` would then be an accident of a fixed script rather than a symmetry
-    # property.
-    assert len(draws) > 1
+    # RANDOM = 0.5` would then be an accident of a fixed script rather than a symmetry property.
+    assert len(draws) > 1, f"300 draws produced {len(draws)} distinct actions"
 
 
 # --- AUTO_ATTACK -------------------------------------------------------------

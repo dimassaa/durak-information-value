@@ -63,7 +63,7 @@ from durak.actions import (
     pack_action,
 )
 from durak.cards import DECK_SIZES, beats, build_deck, rank_of
-from durak.rng import next_below, shuffle_inplace
+from durak.rng import next_below, shuffle_inplace_with_state
 
 # A legal hand can never exceed the deck size, and 52 < 64, so 64 bounds both variants.
 HAND_CAPACITY = 64
@@ -275,40 +275,79 @@ def setup_game(
 ) -> GameState:
     """Deal a game and choose the first attacker.
 
-    Draws only from the ``deal`` stream. Consuming a player's stream during setup would
-    make a run that differs in one strategy differ in the deal too, which would destroy
-    the paired comparison the primary metric depends on.
+    A thin wrapper. The deal itself is :func:`deal_state`, which is compiled, and the split
+    exists because the engine runs inside ``nopython`` and cannot construct a ``GameStreams``
+    -- a Python class does not cross that boundary. Rather than write the deal twice, the
+    compiled function *is* the deal and this unwraps the streams into the three ``uint64``
+    states it wants.
 
-    ``force_redeal`` forces the redeal condition on the first deal so the cap can be
-    exercised without waiting for a 1-in-1.9M event. It forces the *condition*, not the
-    result, so the state it returns is a genuinely re-dealt one.
+    Draws only from the ``deal`` stream. Consuming a player's stream during the deal would make
+    a run that differs in one strategy differ in the deal too, which would destroy the paired
+    comparison the primary metric depends on.
+
+    ``force_redeal`` forces the redeal condition on the first deal so the cap can be exercised
+    without waiting for a 1-in-1.9M event. It forces the *condition*, not the result, so the
+    state it returns is a genuinely re-dealt one. It is a test hook; the engine never sets it.
     """
     if deck_size not in DECK_SIZES:
         raise ValueError(f"deck_size must be one of {DECK_SIZES}, got {deck_size}")
+
+    tunables = RuleTunables(
+        throwin_defense_ranks=throwin_defense_ranks,
+        redeal_limit=redeal_limit,
+        round_cap=MAX_ROUNDS,
+    )
+    return deal_state(
+        deck_size,
+        np.uint64(streams.deal.snapshot()),
+        np.uint64(streams.player0.snapshot()),
+        np.uint64(streams.player1.snapshot()),
+        tunables,
+        force_redeal,
+    )
+
+
+@njit(cache=True)
+def deal_state(deck_size: int, deal_stream: np.uint64, stream_p0: np.uint64,
+               stream_p1: np.uint64, tunables: RuleTunables,
+               force_redeal: bool) -> GameState:
+    """Shuffle, deal, apply the redeal rule, and choose the first attacker.
+
+    The single implementation of the deal, called from the Python side via
+    :func:`setup_game` and from the engine directly. It takes three stream *states* rather than
+    a ``GameStreams`` bundle, because a Python object cannot cross into compiled code.
+
+    The redeal rule: while a player holds all six trumps, reshuffle, up to
+    ``tunables.redeal_limit`` attempts. On reaching the cap the deal falls through with
+    ``flag_redeals_exceeded`` set rather than looping -- the cap exists to make the failure loud,
+    not to prevent it.
+    """
+    if deck_size != 36 and deck_size != 52:
+        raise ValueError("deck_size must be 36 or 52")
 
     redeals = 0
     exceeded = False
     force_first = force_redeal
 
     while True:
-        deck = build_deck(deck_size).copy()
-        shuffle_inplace(deck, streams.deal)
+        deck = np.arange(deck_size, dtype=np.int16)
+        deal_stream = shuffle_inplace_with_state(deck, deal_stream)
 
         hands = np.full((2, HAND_CAPACITY), EMPTY, dtype=np.int16)
         hand_sizes = np.array([HAND_TARGET, HAND_TARGET], dtype=np.int8)
-        # Deal one card at a time, alternately, starting with player 0. The alternation
-        # is a convention rather than a statistical property -- a uniform shuffle makes
-        # the assignment uniform either way.
+        # Dealt one at a time, alternately, starting with player 0. The alternation is a
+        # convention, not a statistical property: a uniform shuffle makes the assignment uniform
+        # either way.
         for i in range(2 * HAND_TARGET):
             hands[i % 2, i // 2] = deck[i]
 
-        # The trump card is the bottom card of the draw pile: face up, but still in the
-        # pile, so it is drawn last. It stays *in* the array rather than being lifted out,
-        # because it is still a card in play -- removing it would break card conservation
-        # by exactly one and quietly invalidate the strongest invariant in the project.
-        draw_pile = deck[2 * HAND_TARGET :].copy()
-        trump_card = int(draw_pile[len(draw_pile) - 1])
-        # The *suit* is what the rules operate on. Storing the card id here instead is the
+        # The trump card is the bottom of the draw pile: face up, but still *in* the pile, so it
+        # is drawn last. It stays in the array rather than being lifted out, because it is still
+        # a card in play -- removing it would break card conservation by exactly one and quietly
+        # invalidate the strongest invariant in the project.
+        draw_pile = deck[2 * HAND_TARGET:].copy()
+        trump_card = draw_pile[draw_pile.shape[0] - 1]
+        # The *suit* is what the rules operate on. Storing the card id here instead was the
         # defect recorded in the Stage 05 report: `beats` compares a suit index against this
         # field, and a card id never equals a suit, so every off-suit beat was refused.
         trump = trump_card % 4
@@ -318,32 +357,26 @@ def setup_game(
 
         force_first = False
         redeals += 1
-        if redeals >= redeal_limit:
-            # The cap exists to make this failure loud rather than to loop forever. Fall
-            # through with a random first attacker and the flag set.
+        if redeals >= tunables.redeal_limit:
             exceeded = True
             break
 
     state = GameState(
-        draw_pile,
-        hands,
-        hand_sizes,
-        deck_size,
-        trump,
-        throwin_defense_ranks,
+        draw_pile, hands, hand_sizes, deck_size, trump, tunables.throwin_defense_ranks,
         trump_card,
     )
     state.redeals = redeals
     state.flag_redeals_exceeded = exceeded
-    state.rng_state = np.uint64(streams.deal.snapshot())
-    # The players' streams are seeded here, once, and are never touched by the deal. A
-    # strategy that drew from the deal stream would make a run differing in one strategy
-    # differ in the deal too, which would destroy the paired comparison.
-    state.rng_p0 = np.uint64(streams.player0.snapshot())
-    state.rng_p1 = np.uint64(streams.player1.snapshot())
+    state.rng_state = deal_stream
+    # The players' streams are seeded here, once, and are never touched by the deal. A strategy
+    # that drew from the deal stream would make a run differing in one strategy differ in the
+    # deal too, which would destroy the paired comparison.
+    state.rng_p0 = stream_p0
+    state.rng_p1 = stream_p1
     return assign_first_attacker(state)
 
 
+@njit(cache=True)
 def _holds_all_six_trumps(hands, hand_sizes, trump_suit: int) -> bool:
     for player in (0, 1):
         size = int(hand_sizes[player])
@@ -356,7 +389,7 @@ def _holds_all_six_trumps(hands, hand_sizes, trump_suit: int) -> bool:
     return False
 
 
-@njit(cache=False)
+@njit(cache=True)
 def assign_first_attacker(state: GameState) -> GameState:
     """Choose who attacks first, per the three documented cases.
 
@@ -392,7 +425,7 @@ def assign_first_attacker(state: GameState) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _lowest_trump(hands, hand_sizes, player: int, trump_suit: int) -> int:
     size = int(hand_sizes[player])
     best = EMPTY
@@ -407,7 +440,7 @@ def _lowest_trump(hands, hand_sizes, player: int, trump_suit: int) -> int:
 # --- hand access -------------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def remove_from_hand(state: GameState, player: int, card: int) -> GameState:
     """Take a card out of a player's hand, closing the gap.
 
@@ -425,7 +458,7 @@ def remove_from_hand(state: GameState, player: int, card: int) -> GameState:
     raise ValueError(f"card {card} is not in player {player}'s hand")
 
 
-@njit(cache=False)
+@njit(cache=True)
 def add_to_hand(state: GameState, player: int, card: int) -> GameState:
     """Append a card to a player's hand."""
     size = int(state.hand_sizes[player])
@@ -436,7 +469,7 @@ def add_to_hand(state: GameState, player: int, card: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def hand_contains(state: GameState, player: int, card: int) -> bool:
     size = int(state.hand_sizes[player])
     for i in range(size):
@@ -445,7 +478,7 @@ def hand_contains(state: GameState, player: int, card: int) -> bool:
     return False
 
 
-@njit(cache=False)
+@njit(cache=True)
 def trumps_in_hand(state: GameState, player: int) -> int:
     """How many trumps a player holds. Used by strategies and by deal statistics."""
     size = int(state.hand_sizes[player])
@@ -456,7 +489,7 @@ def trumps_in_hand(state: GameState, player: int) -> int:
     return count
 
 
-@njit(cache=False)
+@njit(cache=True)
 def lowest_trump(state: GameState, player: int) -> int:
     """The lowest-ranked trump in a player's hand, or ``EMPTY`` if they hold none."""
     return _lowest_trump(state.hands, state.hand_sizes, player, state.trump)
@@ -465,7 +498,7 @@ def lowest_trump(state: GameState, player: int) -> int:
 # --- whose turn --------------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def acting_player(state: GameState) -> int:
     """The player who may act right now.
 
@@ -485,7 +518,7 @@ def acting_player(state: GameState) -> int:
 # --- legality ----------------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def legal_actions(state: GameState, player: int) -> np.ndarray:
     """Every action available to ``player``, as a packed ``int32`` array.
 
@@ -530,7 +563,7 @@ def legal_actions(state: GameState, player: int) -> np.ndarray:
     return out[:count]
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _throwin_legal(state: GameState, card: int) -> bool:
     """Whether ``card`` may be added to the table.
 
@@ -565,7 +598,7 @@ def _throwin_legal(state: GameState, card: int) -> bool:
 # --- applying actions --------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def apply_action(state: GameState, action: int, tunables: RuleTunables) -> GameState:
     """Apply one action, returning the resulting state.
 
@@ -586,7 +619,7 @@ def apply_action(state: GameState, action: int, tunables: RuleTunables) -> GameS
     return _do_take(state)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _do_attack(state: GameState, card: int) -> GameState:
     if not hand_contains(state, state.attacker, card):
         raise ValueError(f"attack with illegal card {card}")
@@ -600,7 +633,7 @@ def _do_attack(state: GameState, card: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _do_throw(state: GameState, card: int) -> GameState:
     if not hand_contains(state, state.attacker, card):
         raise ValueError(f"throw with illegal card {card}")
@@ -612,7 +645,7 @@ def _do_throw(state: GameState, card: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _do_beat(state: GameState, card: int) -> GameState:
     defender = 1 - state.attacker
     if not hand_contains(state, defender, card):
@@ -627,7 +660,7 @@ def _do_beat(state: GameState, card: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _do_take(state: GameState) -> GameState:
     defender = 1 - state.attacker
     if state.table_attack_count == 0:
@@ -649,7 +682,7 @@ def _do_take(state: GameState) -> GameState:
     return _begin_next_round(state, defender)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _any_legal_beat(state: GameState, defender: int) -> bool:
     if state.table_attack_count <= state.table_defense_count:
         return False
@@ -661,7 +694,7 @@ def _any_legal_beat(state: GameState, defender: int) -> bool:
     return False
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _do_stop(state: GameState) -> GameState:
     """The attacker stopped; every attack was beaten, so the table is discarded."""
     if state.table_attack_count != state.table_defense_count:
@@ -678,7 +711,7 @@ def _do_stop(state: GameState) -> GameState:
     return _begin_next_round(state, 1 - state.attacker)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _begin_next_round(state: GameState, next_attacker: int) -> GameState:
     """Refill in the round's draw order, then hand the turn to ``next_attacker``.
 
@@ -696,7 +729,7 @@ def _begin_next_round(state: GameState, next_attacker: int) -> GameState:
 # --- refill ------------------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def refill(state: GameState, tunables: RuleTunables) -> GameState:
     """Top both hands up to six, attacker first.
 
@@ -707,7 +740,7 @@ def refill(state: GameState, tunables: RuleTunables) -> GameState:
     return _refill_for(state, state.attacker)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _refill_for(state: GameState, first_drawer: int) -> GameState:
     # A finished game is never refilled. Without this, a defender who emptied their hand
     # would be handed six fresh cards immediately after winning.
@@ -717,7 +750,7 @@ def _refill_for(state: GameState, first_drawer: int) -> GameState:
     return _refill_one(state, 1 - first_drawer)
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _refill_one(state: GameState, player: int) -> GameState:
     while state.hand_sizes[player] < HAND_TARGET and state.deck_len > 0:
         card = int(state.deck[0])
@@ -728,15 +761,27 @@ def _refill_one(state: GameState, player: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
+def round_cap_reached(state: GameState, tunables: RuleTunables) -> bool:
+    """Whether the round cap has been hit.
+
+    The cap condition in one place, so the two things that react to it cannot disagree: the
+    engine asks this and records a flagged anomaly, while :func:`begin_round` asks it and raises.
+    Numba's ``nopython`` mode has no usable exception handling around a mutated state, so a
+    predicate plus a raise is the only way to keep one condition and two responses.
+    """
+    return state.round_idx >= tunables.round_cap
+
+
+@njit(cache=True)
 def begin_round(state: GameState, tunables: RuleTunables) -> GameState:
     """Guard the round cap before a round begins.
 
-    Termination is guaranteed by the spec (while the draw pile is non-empty a round is
-    bounded by it; once empty the attacker's hand can only shrink), so this is a defensive
-    assertion that turns a hang into a loud failure.
+    A loud failure for callers that have no anomaly channel. The engine does not use this to stop
+    a game -- it uses :func:`round_cap_reached` and records the game as a flagged anomaly instead
+    of aborting a million-game run.
     """
-    if state.round_idx >= tunables.round_cap:
+    if round_cap_reached(state, tunables):
         raise RuntimeError(
             f"round cap {tunables.round_cap} exceeded at round {state.round_idx}"
         )
@@ -746,7 +791,7 @@ def begin_round(state: GameState, tunables: RuleTunables) -> GameState:
 # --- phases ------------------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def phase_of(state: GameState, initial_deck: int) -> int:
     """Game phase from the draw pile, on the pre-registered cut."""
     ratio = state.deck_len / initial_deck
@@ -760,7 +805,7 @@ def phase_of(state: GameState, initial_deck: int) -> int:
 # --- invariants --------------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def check_invariants(state: GameState) -> int:
     """Bitmask of violated invariants; ``0`` means clean.
 
@@ -812,49 +857,60 @@ def check_invariants(state: GameState) -> int:
     return mask
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _has_duplicate(state: GameState) -> bool:
     """Whether any card sits in two places at once.
 
-    O(n) over at most 116 cards with a small boolean scratch array, and it runs after
-    every transition so it has to stay cheap. A set would be faster but cannot cross the
-    compiled boundary.
+    A bitmask rather than a boolean array, and the reason is the spec's own requirement: this
+    runs after *every* state transition, which makes it part of the tournament's hot path rather
+    than a debug aid. Profiling put 200,000 transitions at 104 seconds -- nearly 260 microseconds
+    each -- and the `np.zeros` allocation on entry was the bulk of it. A 52-card deck fits in one
+    64-bit mask, so the whole scratch space becomes a single register and there is nothing to
+    allocate per call.
+
+    A set would be faster still in theory and is not available at all: a Python object cannot
+    cross into ``nopython`` mode.
     """
-    seen = np.zeros(state.initial_deck, dtype=np.bool_)
+    seen = np.int64(0)
 
     for i in range(state.deck_len):
         card = int(state.deck[i])
-        if seen[card]:
+        bit = np.int64(1) << card
+        if seen & bit:
             return True
-        seen[card] = True
+        seen |= bit
     for player in (0, 1):
         for i in range(state.hand_sizes[player]):
             card = int(state.hands[player, i])
-            if seen[card]:
+            bit = np.int64(1) << card
+            if seen & bit:
                 return True
-            seen[card] = True
+            seen |= bit
     for i in range(state.discard_len):
         card = int(state.discard[i])
-        if seen[card]:
+        bit = np.int64(1) << card
+        if seen & bit:
             return True
-        seen[card] = True
+        seen |= bit
     for i in range(state.table_attack_count):
         card = int(state.table_attacks[i])
-        if seen[card]:
+        bit = np.int64(1) << card
+        if seen & bit:
             return True
-        seen[card] = True
+        seen |= bit
     for i in range(state.table_defense_count):
         card = int(state.table_defenses[i])
-        if seen[card]:
+        bit = np.int64(1) << card
+        if seen & bit:
             return True
-        seen[card] = True
+        seen |= bit
     return False
 
 
 # --- array helpers -----------------------------------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _append_attack(state: GameState, card: int) -> GameState:
     if state.table_attack_count >= state.table_attacks.shape[0]:
         bigger = np.empty(max(4, state.table_attacks.shape[0] * 2), dtype=np.int16)
@@ -866,7 +922,7 @@ def _append_attack(state: GameState, card: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _append_defense(state: GameState, card: int) -> GameState:
     if state.table_defense_count >= state.table_defenses.shape[0]:
         bigger = np.empty(max(4, state.table_defenses.shape[0] * 2), dtype=np.int16)
@@ -878,7 +934,7 @@ def _append_defense(state: GameState, card: int) -> GameState:
     return state
 
 
-@njit(cache=False)
+@njit(cache=True)
 def _append_discard(state: GameState, card: int) -> GameState:
     if state.discard_len >= state.discard.shape[0]:
         bigger = np.empty(max(8, state.discard.shape[0] * 2), dtype=np.int16)
@@ -893,7 +949,7 @@ def _append_discard(state: GameState, card: int) -> GameState:
 # --- helpers used by the engine and the tests -------------------------------
 
 
-@njit(cache=False)
+@njit(cache=True)
 def draw_action(actions: np.ndarray, rng_state) -> tuple:
     """Pick uniformly among ``actions``, returning ``(action, new_state_as_python_int)``.
 

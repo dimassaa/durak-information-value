@@ -93,7 +93,7 @@ def rank_min(deck_size: int) -> int:
 # the engine.
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def rank_of(card: int) -> int:
     """Rank index of a card id, counted from zero within its deck.
 
@@ -104,13 +104,13 @@ def rank_of(card: int) -> int:
     return card // _NUM_SUITS
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def suit_of(card: int) -> int:
     """Suit index of a card id, in 0..3."""
     return card % _NUM_SUITS
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def printed_rank(card: int, deck_size: int) -> int:
     """Printed rank of a card id: 6..14 for 36 cards, 2..14 for 52.
 
@@ -125,7 +125,7 @@ def printed_rank(card: int, deck_size: int) -> int:
     return rank_of(card) + floor
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def card_id(rank_offset: int, suit: int) -> int:
     """Encode a (rank offset, suit) pair into a card id."""
     return rank_offset * _NUM_SUITS + suit
@@ -142,7 +142,7 @@ def build_deck(deck_size: int) -> np.ndarray:
     return np.arange(deck_size, dtype=np.int16)
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def beats(a: int, b: int, trump: int) -> bool:
     """Whether card ``a`` beats card ``b`` given trump suit ``trump``.
 

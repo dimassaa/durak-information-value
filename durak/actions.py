@@ -36,7 +36,7 @@ KIND_MASK = 0b111
 NO_CARD = 0
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def pack_action(kind: int, card: int = 0) -> int:
     """Pack an action kind and card id into one non-negative integer.
 
@@ -61,13 +61,13 @@ def unpack_action(action: int) -> tuple:
     return kind, int(action >> CARD_BITS)
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def action_kind(action: int) -> int:
     """Just the kind, without materialising the card."""
     return action & KIND_MASK
 
 
-@njit(cache=False, inline="always")
+@njit(cache=True, inline="always")
 def action_card(action: int) -> int:
     """Just the card id, or ``0`` for a cardless kind."""
     kind = action & KIND_MASK
