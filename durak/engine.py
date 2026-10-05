@@ -90,11 +90,19 @@ NO_WINNER = -1
 # any game that is genuinely stalling, so reaching this would itself be a defect.
 MAX_ACTIONS_PER_GAME = 4 * MAX_ROUNDS + 64
 
-# Capacity used to size the caller's optional record arrays. Generous for the slowest terminating
-# policy measured (`RANDOM`, mean 46 rounds, max 117). Exceeding it raises rather than truncating:
-# a silently truncated telemetry stream is worse than a failed run.
-ROUNDS_PER_GAME_CAPACITY = 200
-MOVES_PER_GAME_CAPACITY = 3_000
+# Records kept per game for the optional telemetry levels.
+#
+# A game stopped at the round cap emits 10,000 rounds against roughly 14 for a normal one. That
+# is not merely a buffer problem: a single stalled game would contribute 700 times its share of
+# the level-2 dataset and wreck any per-round analysis, which is the analysis the project's
+# primary question depends on. So the per-game count is bounded, and truncation is *recorded* on
+# the level-1 row (`flag_round_records_truncated`) rather than being silent -- silently dropping
+# rows would leave a dataset that looks complete and is not.
+#
+# 300 is comfortably above the longest terminating game measured (`RANDOM`, max 117 rounds), so
+# the limit binds only on games that already carry `flag_round_cap_hit`.
+ROUNDS_PER_GAME_LIMIT = 300
+MOVES_PER_GAME_LIMIT = 2_000
 
 # Default level-3 sampling modulus. Deterministic by `game_index`, never RNG-based, so the sample
 # does not depend on how work was scheduled.
@@ -150,6 +158,10 @@ def _build_game_dtype():
         ("flag_redeals_exceeded", "?"), ("flag_round_cap_hit", "?"),
         ("flag_illegal_move", "?"), ("flag_card_conservation_violation", "?"),
         ("flag_both_players_empty", "?"), ("flag_anomaly_any", "?"),
+        # Telemetry completeness. Not data-quality anomalies -- the game was played correctly --
+        # but a dataset that silently dropped rows would be indistinguishable from a complete
+        # one, so truncation of levels 2 and 3 is recorded here.
+        ("flag_round_records_truncated", "?"), ("flag_move_records_truncated", "?"),
     ])
 
 
@@ -264,13 +276,15 @@ def _blank_outcome(run_id, game_index, game_seed, deck_size, strategy_p0, strate
 
 
 @njit(cache=True)
-def _play_one(outcomes, row_index, rounds, moves, run_id, deck_size, strategy_p0, strategy_p1,
-              info_p0, info_p1, block_seed, pairing_index, game_index, tunables, record_rounds,
-              record_moves, sample_this_game):
+def _play_one(outcomes, row_index, rounds, moves, rounds_start, moves_start, run_id, deck_size,
+              strategy_p0, strategy_p1, info_p0, info_p1, block_seed, pairing_index, game_index,
+              tunables, record_rounds, record_moves, sample_this_game):
     """Play one game, writing its level-1 record into ``outcomes[row_index]``.
 
-    Returns the number of round and move records written. Counts are returned rather than kept on
-    the state so the state stays a game and the telemetry stays beside it.
+    `rounds_start` and `moves_start` are the caller's current write offsets, so records accumulate
+    across the whole block instead of restarting at zero per game. Returns the *new* offsets.
+    Counts are returned rather than kept on the state so the state stays a game and the telemetry
+    stays beside it.
     """
     game_seed = seed_to_i64(mix_seed3(block_seed, pairing_index, game_index))
     deal_stream, stream_p0, stream_p1 = game_stream_states(block_seed, pairing_index, game_index)
@@ -313,8 +327,8 @@ def _play_one(outcomes, row_index, rounds, moves, run_id, deck_size, strategy_p0
     attack_turns = np.zeros(2, dtype=np.int64)
     win_from_single = np.zeros(2, dtype=np.bool_)
 
-    rounds_written = 0
-    moves_written = 0
+    rounds_written = rounds_start
+    moves_written = moves_start
     actions = 0
     max_attacks = 0
     cap_hit = False
@@ -352,7 +366,8 @@ def _play_one(outcomes, row_index, rounds, moves, run_id, deck_size, strategy_p0
 
             if round_open:
                 rounds_written = _flush_round(
-                    rounds, rounds_written, row, state, state.round_idx - 1, round_attacker,
+                    rounds, rounds_written, rounds_start, row, state, state.round_idx - 1,
+                    round_attacker,
                     round_attacks, round_throw_ins, round_defenses, round_took,
                     round_take_voluntary, round_roles_swapped, record_rounds,
                 )
@@ -383,7 +398,8 @@ def _play_one(outcomes, row_index, rounds, moves, run_id, deck_size, strategy_p0
 
         if record_moves and sample_this_game:
             moves_written = _record_move(
-                moves, moves_written, row, state, actions, player, action, offered, info
+                moves, moves_written, moves_start, row, state, actions, player, action, offered,
+                info
             )
 
         kind = action_kind(action)
@@ -439,7 +455,8 @@ def _play_one(outcomes, row_index, rounds, moves, run_id, deck_size, strategy_p0
 
     if round_open:
         rounds_written = _flush_round(
-            rounds, rounds_written, row, state, state.round_idx, round_attacker, round_attacks,
+            rounds, rounds_written, rounds_start, row, state, state.round_idx, round_attacker,
+            round_attacks,
             round_throw_ins, round_defenses, round_took, round_take_voluntary, round_roles_swapped,
             record_rounds,
         )
@@ -491,6 +508,17 @@ def _play_one(outcomes, row_index, rounds, moves, run_id, deck_size, strategy_p0
         cap_hit or illegal or conservation_broken or both_empty
         or bool(state.flag_redeals_exceeded)
     )
+    # Telemetry completeness, recorded separately from the data-quality anomalies above: the game
+    # was played correctly, but its per-round or per-move record was bounded. Deliberately kept out
+    # of `flag_anomaly_any` -- a truncated run is not an invalid game, and conflating the two would
+    # make a perfectly good dataset look broken.
+    row["flag_round_records_truncated"] = (
+        record_rounds and (rounds_written - rounds_start) >= ROUNDS_PER_GAME_LIMIT
+    )
+    row["flag_move_records_truncated"] = (
+        record_moves and sample_this_game
+        and (moves_written - moves_start) >= MOVES_PER_GAME_LIMIT
+    )
 
     return rounds_written, moves_written
 
@@ -511,8 +539,8 @@ def _has_legal_beat(state: GameState, defender: int) -> bool:
 
 
 @njit(cache=True)
-def _flush_round(rounds, written, row, state, round_idx, attacker, n_attacks, n_throw_ins,
-                 n_defenses, defender_took, take_voluntary, roles_swapped, record):
+def _flush_round(rounds, written, round_start, row, state, round_idx, attacker, n_attacks,
+                 n_throw_ins, n_defenses, defender_took, take_voluntary, roles_swapped, record):
     """Write one level-2 record, returning the new write count.
 
     `record` is False when level 2 is switched off, in which case nothing is written and the
@@ -520,11 +548,11 @@ def _flush_round(rounds, written, row, state, round_idx, attacker, n_attacks, n_
     """
     if not record or (n_attacks == 0 and n_defenses == 0):
         return written
-    if written >= len(rounds):
-        raise ValueError(
-            "round record capacity exceeded: raise ROUNDS_PER_GAME_CAPACITY or lower the "
-            "block size. Silently truncating telemetry would be worse than failing the run."
-        )
+    if (written - round_start) >= ROUNDS_PER_GAME_LIMIT:
+        # A stalled game emits 10,000 rounds against ~14 for a normal one, and one of those
+        # would dominate the level-2 dataset. Truncated here and flagged on the level-1 row, so
+        # the dataset stays analysable and nothing disappears without a trace.
+        return written
 
     rec = rounds[written]
     rec["run_id"] = row["run_id"]
@@ -548,13 +576,12 @@ def _flush_round(rounds, written, row, state, round_idx, attacker, n_attacks, n_
 
 
 @njit(cache=True)
-def _record_move(moves, written, row, state, seq, player, action, offered, info):
+def _record_move(moves, written, move_start, row, state, seq, player, action, offered, info):
     """Write one level-3 record, returning the new write count."""
-    if written >= len(moves):
-        raise ValueError(
-            "move record capacity exceeded: raise MOVES_PER_GAME_CAPACITY or lower the "
-            "block size. Silently truncating telemetry would be worse than failing the run."
-        )
+    if (written - move_start) >= MOVES_PER_GAME_LIMIT:
+        # Same reasoning as the round records: a stalled game would otherwise contribute 10,000
+        # moves to level 3 and swamp the sampled mechanism analysis.
+        return written
 
     index = -1
     for i in range(len(offered)):
@@ -594,9 +621,9 @@ def play_block(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, block_seed
     """
     outcomes = np.zeros(game_count, dtype=GAME_DTYPE)
 
-    rounds = np.zeros(game_count * ROUNDS_PER_GAME_CAPACITY, dtype=ROUND_DTYPE) \
+    rounds = np.zeros(game_count * ROUNDS_PER_GAME_LIMIT, dtype=ROUND_DTYPE) \
         if record_rounds else np.zeros(0, dtype=ROUND_DTYPE)
-    moves = np.zeros(game_count * MOVES_PER_GAME_CAPACITY, dtype=MOVE_DTYPE) \
+    moves = np.zeros(game_count * MOVES_PER_GAME_LIMIT, dtype=MOVE_DTYPE) \
         if record_moves else np.zeros(0, dtype=MOVE_DTYPE)
 
     rounds_written = 0
@@ -607,13 +634,18 @@ def play_block(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, block_seed
         # Deterministic sampling by game index, never by RNG: an RNG-based sample would differ
         # between a 1-worker and an 8-worker run and break reproducibility.
         sample_this_game = record_moves and (game_index % sample_modulus == 0)
+        # The write offsets are threaded *into* each game. Starting every game at zero was a real
+        # defect: every game overwrote the previous game's records, so only the last game's rows
+        # survived while the returned counts implied all of them. Level 2 and level 3 would have
+        # been silently wrong for every multi-game block.
         written, move_count = _play_one(
-            outcomes, i, rounds, moves, run_id, deck_size, strategy_p0, strategy_p1, info_p0,
+            outcomes, i, rounds, moves, rounds_written, moves_written,
+            run_id, deck_size, strategy_p0, strategy_p1, info_p0,
             info_p1, block_seed, pairing_index, game_index, settings, record_rounds,
             record_moves, sample_this_game,
         )
-        rounds_written += written
-        moves_written += move_count
+        rounds_written = written
+        moves_written = move_count
 
     return outcomes[:game_count], rounds[:rounds_written], moves[:moves_written]
 
