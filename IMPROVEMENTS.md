@@ -13,3 +13,11 @@ Resolution priority is the project owner's call, not the implementer's.
   A `pytest -W error::RuntimeWarning` run therefore fails under `NUMBA_DISABLE_JIT=1` by
   design (command-line filters take precedence). If a future contributor runs the suite
   that way and reads the failure as a bug, this line explains it.
+
+- **Stage 04** — 44% of `RANDOM` vs `RANDOM` games hit the 10,000-round cap and never
+  terminate (2,617 of 6,000, measured). `RANDOM` takes constantly, and the rules allow taking
+  forever once the draw pile is empty, so the strategy drives itself into a cycle. This breaks
+  the project's only exact assertion: the symmetry test is currently computed over a biased
+  56% subset. Blocking for the headline result. Three options costed in
+  `.superpowers/reports/stage-04-strategy-registry.md`; the call belongs to the study owner and
+  to Task 8. Provisional plan is option 2 (publish the termination rate beside the 0.5).
