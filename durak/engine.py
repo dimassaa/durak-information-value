@@ -61,6 +61,7 @@ from durak.actions import (
 from durak.rng import game_stream_states, mix_seed3
 from durak.rules import (
     EMPTY,
+    USE_RULE,
     MAX_ROUNDS,
     GameState,
     RuleTunables,
@@ -278,7 +279,7 @@ def _blank_outcome(run_id, game_index, game_seed, deck_size, strategy_p0, strate
 @njit(cache=True)
 def _play_one(outcomes, row_index, rounds, moves, rounds_start, moves_start, run_id, deck_size,
               strategy_p0, strategy_p1, info_p0, info_p1, block_seed, pairing_index, game_index,
-              tunables, record_rounds, record_moves, sample_this_game):
+              tunables, record_rounds, record_moves, sample_this_game, first_attacker_override):
     """Play one game, writing its level-1 record into ``outcomes[row_index]``.
 
     `rounds_start` and `moves_start` are the caller's current write offsets, so records accumulate
@@ -291,7 +292,8 @@ def _play_one(outcomes, row_index, rounds, moves, rounds_start, moves_start, run
     # `deal_state` rather than `setup_game`: the engine is compiled, and a `GameStreams` bundle is
     # a Python class that cannot cross into `nopython`. The deal itself has one implementation;
     # `setup_game` is only a wrapper that unwraps a bundle into these three states.
-    state = deal_state(deck_size, deal_stream, stream_p0, stream_p1, tunables, False)
+    state = deal_state(deck_size, deal_stream, stream_p0, stream_p1, tunables, False,
+                       first_attacker_override)
     row = outcomes[row_index]
 
     row["run_id"] = run_id
@@ -611,7 +613,8 @@ def _record_move(moves, written, move_start, row, state, seq, player, action, of
 @njit(cache=True)
 def play_block(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, block_seed, pairing_index,
                game_start, game_count, settings, record_rounds, record_moves, run_id=0,
-               sample_modulus=DEFAULT_SAMPLE_MODULUS):
+               sample_modulus=DEFAULT_SAMPLE_MODULUS,
+               first_attacker_override=USE_RULE):
     """Play `game_count` games, with `game_index = game_start + i`.
 
     Returns ``(outcomes, rounds, moves)``. The round and move arrays are empty when the matching
@@ -642,7 +645,7 @@ def play_block(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, block_seed
             outcomes, i, rounds, moves, rounds_written, moves_written,
             run_id, deck_size, strategy_p0, strategy_p1, info_p0,
             info_p1, block_seed, pairing_index, game_index, settings, record_rounds,
-            record_moves, sample_this_game,
+            record_moves, sample_this_game, first_attacker_override,
         )
         rounds_written = written
         moves_written = move_count
@@ -653,7 +656,7 @@ def play_block(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, block_seed
 @njit(cache=True)
 def play_game(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, seed, settings,
               record_rounds, record_moves, pairing_index=0, game_index=0, run_id=0,
-              sample_modulus=DEFAULT_SAMPLE_MODULUS):
+              sample_modulus=DEFAULT_SAMPLE_MODULUS, first_attacker_override=USE_RULE):
     """Play one game and return its level-1 record.
 
     A one-game block, so that a single game and a game inside a block cannot diverge. The
@@ -663,6 +666,6 @@ def play_game(deck_size, strategy_p0, strategy_p1, info_p0, info_p1, seed, setti
     """
     outcomes, _, _ = play_block(
         deck_size, strategy_p0, strategy_p1, info_p0, info_p1, seed, pairing_index, game_index, 1,
-        settings, record_rounds, record_moves, run_id, sample_modulus,
+        settings, record_rounds, record_moves, run_id, sample_modulus, first_attacker_override,
     )
     return outcomes[0]

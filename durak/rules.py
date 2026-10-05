@@ -73,6 +73,10 @@ EMPTY = -1
 MAX_REDEALS = 100
 MAX_ROUNDS = 10_000
 
+# Sentinel for "choose the first attacker by the rule". Distinct from 0 and 1, which are seats --
+# a sentinel of 0 would silently disable the rule for half of every rotation-balanced run.
+USE_RULE = -1
+
 # Throw-in ceiling. Counts attack cards only, never defense cards, and binds even when the
 # defender holds more than six cards -- which happens only after a take.
 THROWIN_CAP = 6
@@ -304,13 +308,14 @@ def setup_game(
         np.uint64(streams.player1.snapshot()),
         tunables,
         force_redeal,
+        USE_RULE,
     )
 
 
 @njit(cache=True)
 def deal_state(deck_size: int, deal_stream: np.uint64, stream_p0: np.uint64,
-               stream_p1: np.uint64, tunables: RuleTunables,
-               force_redeal: bool) -> GameState:
+               stream_p1: np.uint64, tunables: RuleTunables, force_redeal: bool,
+               first_attacker_override: int) -> GameState:
     """Shuffle, deal, apply the redeal rule, and choose the first attacker.
 
     The single implementation of the deal, called from the Python side via
@@ -373,7 +378,11 @@ def deal_state(deck_size: int, deal_stream: np.uint64, stream_p0: np.uint64,
     # deal too, which would destroy the paired comparison.
     state.rng_p0 = stream_p0
     state.rng_p1 = stream_p1
-    return assign_first_attacker(state)
+    state = assign_first_attacker(state)
+
+    if first_attacker_override == 0 or first_attacker_override == 1:
+        state.attacker = first_attacker_override
+    return state
 
 
 @njit(cache=True)
