@@ -149,7 +149,18 @@ _GAME_STATE_SPEC = [
     ("flag_redeals_exceeded", types.boolean),
     ("last_take_voluntary", types.boolean),
     ("throwin_defense_ranks", types.boolean),
+    # Three separate streams, for the reasons in `durak.rng`. `rng_state` carries the
+    # deal's continuation and is consumed by setup (choosing a first attacker when neither
+    # player holds a trump); `rng_p0` and `rng_p1` belong to the players.
+    #
+    # The players' streams live in the state rather than in the caller because a policy
+    # returns only its action: there is no channel through which an advanced stream could
+    # travel back out. Keeping them per player is what stops one policy's draw count from
+    # shifting the opponent's randomness, which is the property cross-strategy
+    # comparability depends on.
     ("rng_state", types.uint64),
+    ("rng_p0", types.uint64),
+    ("rng_p1", types.uint64),
 ]
 
 
@@ -189,6 +200,8 @@ class GameState:
         self.last_take_voluntary = False
         self.throwin_defense_ranks = throwin_defense_ranks
         self.rng_state = np.uint64(1)
+        self.rng_p0 = np.uint64(1)
+        self.rng_p1 = np.uint64(1)
 
 
 def settings_from_config(settings) -> RuleTunables:
@@ -303,6 +316,11 @@ def setup_game(
     state.redeals = redeals
     state.flag_redeals_exceeded = exceeded
     state.rng_state = np.uint64(streams.deal.snapshot())
+    # The players' streams are seeded here, once, and are never touched by the deal. A
+    # strategy that drew from the deal stream would make a run differing in one strategy
+    # differ in the deal too, which would destroy the paired comparison.
+    state.rng_p0 = np.uint64(streams.player0.snapshot())
+    state.rng_p1 = np.uint64(streams.player1.snapshot())
     return assign_first_attacker(state)
 
 

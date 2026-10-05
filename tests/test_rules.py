@@ -37,6 +37,7 @@ from durak.actions import (
 )
 from durak.cards import DECK_SIZES, beats, rank_of, suit_of
 from durak.rng import GameStreams
+from tests.support import Pool, card_at, legal_state, table_with_free_ranks
 
 EMPTY = rules.EMPTY
 HAND_CAPACITY = rules.HAND_CAPACITY
@@ -44,105 +45,6 @@ HAND_TARGET = rules.HAND_TARGET
 MAX_ROUNDS = rules.MAX_ROUNDS
 
 T = rules.DEFAULT_SETTINGS
-
-
-def card_at(rank, suit):
-    """The card id of a (rank offset, suit) pair."""
-    return rank * 4 + suit
-
-
-class Pool:
-    """Hands out distinct cards, tracking what has been taken.
-
-    Tests build positions from a pool rather than from slicing the deck directly. Slicing
-    produced overlapping hands -- ``non_trumps`` and ``trumps_of`` both returned hearts --
-    and the resulting fixtures were not positions the rules could ever reach.
-    """
-
-    def __init__(self, deck_size=36):
-        self._available = set(range(deck_size))
-        self._order = list(range(deck_size))
-
-    def reserve(self, card):
-        """Mark a card as used without taking it from the ordered pool."""
-        self._available.discard(card)
-        self._order = [c for c in self._order if c != card]
-        return card
-
-    def take(self, count):
-        """The next `count` unused cards, in ascending order."""
-        picked = [c for c in self._order if c in self._available][:count]
-        assert len(picked) == count, "not enough cards left"
-        for card in picked:
-            self._available.discard(card)
-        return picked
-
-    def of_suit(self, count, suit):
-        """`count` unused cards of one suit."""
-        picked = [c for c in self._order if c in self._available and suit_of(c) == suit][:count]
-        assert len(picked) == count, f"not enough cards of suit {suit} left"
-        for card in picked:
-            self._available.discard(card)
-        return picked
-
-    def without_suit(self, count, suit):
-        """`count` unused cards that are *not* of the given suit.
-
-        Needed for the no-trump deals. `take` would happily hand out trumps, and a
-        "neither player holds a trump" fixture that quietly contained one tested nothing.
-        """
-        picked = [c for c in self._order if c in self._available and suit_of(c) != suit][:count]
-        assert len(picked) == count, f"not enough cards outside suit {suit} left"
-        for card in picked:
-            self._available.discard(card)
-        return picked
-
-
-def legal_state(
-    hand0,
-    hand1,
-    trump,
-    attacker=0,
-    table_attacks=(),
-    table_defenses=(),
-    discard=(),
-    deck_size=36,
-    throwin_defense_ranks=True,
-):
-    """A card-conserving game state built from explicit card allocations.
-
-    Every card not named in a hand, on the table, or in the discard goes into the draw
-    pile, so ``deck_len`` always matches the array it indexes. Asserted at construction:
-    a fixture that is not a legal state makes every invariant assertion below meaningless.
-    """
-    named = [c for group in (hand0, hand1, table_attacks, table_defenses, discard) for c in group]
-    assert len(set(named)) == len(named), f"a card was allocated twice: {named}"
-
-    hands = np.full((2, HAND_CAPACITY), EMPTY, dtype=np.int16)
-    for i, card in enumerate(hand0):
-        hands[0, i] = card
-    for i, card in enumerate(hand1):
-        hands[1, i] = card
-
-    remaining = [c for c in range(deck_size) if c not in set(named)]
-    state = rules.GameState(
-        np.array(remaining, dtype=np.int16),
-        hands,
-        np.array([len(hand0), len(hand1)], dtype=np.int8),
-        deck_size,
-        trump,
-        throwin_defense_ranks,
-    )
-    state.discard = np.array(list(discard), dtype=np.int16)
-    state.discard_len = len(state.discard)
-    state.table_attacks = np.array(list(table_attacks), dtype=np.int16)
-    state.table_attack_count = len(state.table_attacks)
-    state.table_defenses = np.array(list(table_defenses), dtype=np.int16)
-    state.table_defense_count = len(state.table_defenses)
-    state.attacker = attacker
-
-    assert rules.check_invariants(state) == 0, "fixture is not a legal state"
-    return state
 
 
 def kinds(state, player):
@@ -473,26 +375,6 @@ def test_throwin_respects_the_flag_on_defense_card_ranks():
     assert thrown(without_flag, 0) == []
 
 
-def _table_with_free_ranks(pool, count, trump=0):
-    """A fully-answered table of `count` attacks, plus two cards that match nothing.
-
-    Attacks are hearts cards of ranks ``0..count-1``; each is answered by a spade of the
-    same rank -- the trump beats any non-trump, and the suits differ so the cards are
-    distinct. Keeping both lists on the same ranks holds the table's rank set to
-    ``{0..count-1}``, which leaves ranks free for cards that match nothing. That is what
-    lets a test assert "exactly this one card is a legal throw-in" rather than "at least
-    one".
-    """
-    ranks = list(range(count))
-    attacks = [pool.reserve(card_at(r, 1)) for r in ranks]
-    defenses = [pool.reserve(card_at(r, 0)) for r in ranks]
-    tabled_ranks = {rank_of(c) for c in attacks} | {rank_of(c) for c in defenses}
-    free_ranks = [r for r in range(9) if r not in tabled_ranks]
-    assert len(free_ranks) >= 2, f"table consumed every rank: {sorted(tabled_ranks)}"
-    free = [pool.reserve(card_at(free_ranks[0], 3)), pool.reserve(card_at(free_ranks[1], 3))]
-    return attacks, defenses, free
-
-
 def test_throwin_limit_caps_at_six_when_defender_holds_more_than_six():
     """The cap is 6 even when the defender's hand is larger.
 
@@ -501,7 +383,7 @@ def test_throwin_limit_caps_at_six_when_defender_holds_more_than_six():
     throw-in statistic in the dataset.
     """
     pool = Pool()
-    attacks, defenses, free = _table_with_free_ranks(pool, 6)
+    attacks, defenses, free = table_with_free_ranks(pool, 6)
     matching = pool.reserve(card_at(rank_of(attacks[0]), 2))   # matches a tabled rank
 
     state = legal_state([matching] + free, pool.take(9), trump=0,
@@ -520,7 +402,7 @@ def test_throwin_allows_a_sixth_attack():
     equally wrong and equally invisible in the aggregates.
     """
     pool = Pool()
-    attacks, defenses, free = _table_with_free_ranks(pool, 5)
+    attacks, defenses, free = table_with_free_ranks(pool, 5)
     matching = pool.reserve(card_at(rank_of(attacks[0]), 2))
 
     state = legal_state([matching] + free, pool.take(9), trump=0,
@@ -532,7 +414,7 @@ def test_throwin_allows_a_sixth_attack():
 def test_throwin_limit_scales_with_small_defender_hand():
     """With three attacks tabled and a three-card defender, no more may be added."""
     pool = Pool()
-    attacks, defenses, free = _table_with_free_ranks(pool, 3)
+    attacks, defenses, free = table_with_free_ranks(pool, 3)
     matching = pool.reserve(card_at(rank_of(attacks[0]), 2))
 
     state = legal_state([matching] + free, pool.take(3), trump=0,
@@ -544,7 +426,7 @@ def test_throwin_limit_scales_with_small_defender_hand():
 def test_throwin_limit_allows_up_to_the_defenders_hand():
     """One below the defender's hand, a throw-in is still legal."""
     pool = Pool()
-    attacks, defenses, free = _table_with_free_ranks(pool, 2)
+    attacks, defenses, free = table_with_free_ranks(pool, 2)
     matching = pool.reserve(card_at(rank_of(attacks[0]), 2))
 
     state = legal_state([matching] + free, pool.take(3), trump=0,
