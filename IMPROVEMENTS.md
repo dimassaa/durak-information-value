@@ -35,3 +35,21 @@ Resolution priority is the project owner's call, not the implementer's.
   `RANDOM` because trumps beat off-suit cards and hands therefore shrink, but a real stall
   configuration exists (see the entry above). The spec statement should be corrected to say
   termination is bounded by the round cap, not guaranteed by the rules.
+
+- **Stage 06** — the win rule makes the endgame far more degenerate than the spec's "noted as a
+  limitation" suggests. Measured: **68% of 36-card games and 70% of 52-card games** end with the
+  winner attacking their last card, so the defender never responds and its entire hand was
+  irrelevant. The primary comparison is between search strategies that share this rule, so the
+  effect is common-mode rather than differential — but the rules report must state the number, not
+  gesture at it. Why the 52-card figure is slightly *higher* is not established.
+
+- **Stage 06** — `durak.rng`'s `game_stream_states` was the third site of the uint64-at-the-
+  compiled-boundary defect. Two earlier ones are documented above. The pattern is now: any
+  function taking a seed or stream state from Python must mask or wrap it before passing it into
+  compiled code. A grep for `_fold(` and `next_below(` call sites across the codebase would be
+  worth doing once at the end rather than discovering these one per stage.
+
+- **Stage 06** — spec section 6.1 does not record where the remaining cards are at the end of a
+  game (draw pile, discard, table). Five end-state fields were added to the schema so card
+  conservation can be verified from the dataset alone rather than by re-running the game.
+  Additive: no spec field renamed or removed. The spec's telemetry table should be updated.
