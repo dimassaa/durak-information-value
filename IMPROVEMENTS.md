@@ -71,3 +71,29 @@ Resolution priority is the project owner's call, not the implementer's.
   `game_count * limit` before trimming. For a 10,000-game tournament that is a 3,000,000-row
   allocation for moves and 3,000,000 for rounds even though level 3 is sampled 1-in-20. Fine at
   current block sizes (Task 8 splits into blocks); worth revisiting if block sizes grow.
+
+- **Stage 08** — `GREEDY` fails to terminate in 5.0% of 36-card games and 7.6% of 52-card games
+  (measured over 2,000 and 1,000 games respectively; `AUTO_DEFEND` was 5% in Stage 6). This is
+  **not yet diagnosed**. Either it is a property of the rules, in which case every win rate needs a
+  stated treatment of undecided games and Task 11's definitions must settle it; or it is a defect in
+  `GREEDY`'s defence rule. Stage 08 deliberately did not guess which. It must be settled before any
+  win rate is published, and before Stage 10's dataset scale is chosen, because a 5–8% stall rate
+  inflates the cost of every run containing those policies by an order of magnitude.
+
+- **Stage 08** — `ROTATION_BALANCED` calls `play_block` once per game because the first-attacker
+  override is a single parameter but the rotation alternates on the game index. Correct, and
+  roughly 3–5x slower than necessary: per-call overhead dominates at ~40 µs/game. The fix is to
+  pass the *regime* into `play_block` and resolve the seat inside the compiled loop. Deferred to
+  Task 15, where per-call overhead is the whole problem being solved.
+
+- **Stage 08** — the benchmark runs with `-n 0`. Under xdist each worker is a separate process, so
+  `time.process_time()` measures the worker rather than the benchmark and the numbers are
+  meaningless. The `-m perf` marker is excluded from the default suite by `addopts`, but nothing
+  stops someone running `-m perf` in parallel and getting plausible wrong figures. The benchmark
+  module should detect a non-zero xdist worker count and skip with a clear message.
+
+- **Stage 08** — spec section 8.4's rotation-balanced regime required an engine feature
+  (`first_attacker_override` in `deal_state`) that the spec did not mention as a rules-layer change.
+  The spec's rule section should state that the first attacker is overridable for experimental
+  control, since it is now part of the rules surface and someone reading only the spec would not
+  know it exists.
