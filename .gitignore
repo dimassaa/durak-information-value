@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Numba / compiled artifacts
+__numba_cache__/
+*.nbi
+*.nbc
+
+# SDD workspace and stage reports are local scratch, not project history.
+.superpowers/
+
+# Generated research dataset: large, and reproducible from the manifest.
+data/
+*.parquet
+*.db
+
+# Generated report outputs and aggregates ARE tracked, so they are NOT ignored:
+#   analysis/data/*.json      report inputs, committed for byte-reproducible builds
+#   reports/out/*.html        committed dashboards
+#   reports/out/figures/*.png committed figures for the README
+#   IMPROVEMENTS.md           tracked backlog, never ignored
