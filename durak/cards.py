@@ -36,6 +36,7 @@ this module is safe to call from Numba's ``nopython`` mode.
 from __future__ import annotations
 
 import numpy as np
+from numba import njit
 
 # Deck sizes this project supports, and their lowest rank.
 DECK_SIZES = (36, 52)
@@ -85,6 +86,14 @@ def rank_min(deck_size: int) -> int:
     return _RANK_MIN[deck_size]
 
 
+# The accessors below are decorated with `@njit` because the rules engine calls them from
+# inside its hot loop, and Numba cannot infer an untyped plain-Python global there.
+# `@njit` keeps a single implementation: the same function serves Python callers and
+# compiled callers, so the beat relation cannot drift between the readable reference and
+# the engine.
+
+
+@njit(cache=False, inline="always")
 def rank_of(card: int) -> int:
     """Rank index of a card id, counted from zero within its deck.
 
@@ -95,20 +104,28 @@ def rank_of(card: int) -> int:
     return card // _NUM_SUITS
 
 
+@njit(cache=False, inline="always")
 def suit_of(card: int) -> int:
     """Suit index of a card id, in 0..3."""
     return card % _NUM_SUITS
 
 
+@njit(cache=False, inline="always")
 def printed_rank(card: int, deck_size: int) -> int:
     """Printed rank of a card id: 6..14 for 36 cards, 2..14 for 52.
 
     Needed only where the rules name a printed rank: "the lowest trump attacks
     first" and "high card means rank >= 10".
+
+    The deck floor is taken from ``_RANK_MIN`` as a lookup rather than through
+    :func:`rank_min`, because a dict lookup cannot be typed by Numba and the validation in
+    ``rank_min`` is only reachable from Python anyway.
     """
-    return rank_of(card) + rank_min(deck_size)
+    floor = 6 if deck_size == 36 else 2
+    return rank_of(card) + floor
 
 
+@njit(cache=False, inline="always")
 def card_id(rank_offset: int, suit: int) -> int:
     """Encode a (rank offset, suit) pair into a card id."""
     return rank_offset * _NUM_SUITS + suit
@@ -125,6 +142,7 @@ def build_deck(deck_size: int) -> np.ndarray:
     return np.arange(deck_size, dtype=np.int16)
 
 
+@njit(cache=False, inline="always")
 def beats(a: int, b: int, trump: int) -> bool:
     """Whether card ``a`` beats card ``b`` given trump suit ``trump``.
 
