@@ -53,3 +53,21 @@ Resolution priority is the project owner's call, not the implementer's.
   game (draw pile, discard, table). Five end-state fields were added to the schema so card
   conservation can be verified from the dataset alone rather than by re-running the game.
   Additive: no spec field renamed or removed. The spec's telemetry table should be updated.
+
+- **Stage 07** — the `NUMBA_DISABLE_JIT=1` full suite has **not** been run to completion since
+  Stage 6. It takes ~11 minutes, which is why it has not become routine. The per-file runs and the
+  subprocess equivalence probe cover the same ground more cheaply, but the full interpreted pass is
+  the project's formal cross-mode gate and must be run before Task 14 (the `prange` port), whose
+  entire purpose is that guarantee. Running it in the background while working is the practical
+  answer.
+
+- **Stage 07** — spec section 6.1 does not describe the two telemetry-completeness flags added in
+  Stage 7 (`flag_round_records_truncated`, `flag_move_records_truncated`), nor the five end-state
+  fields from Stage 6. Both additions are necessary — without them a bounded dataset is
+  indistinguishable from a complete one, and card conservation cannot be checked from the data.
+  The spec's telemetry tables should be updated to match.
+
+- **Stage 07** — `durak.engine.play_block` returns round and move records as NumPy arrays sized
+  `game_count * limit` before trimming. For a 10,000-game tournament that is a 3,000,000-row
+  allocation for moves and 3,000,000 for rounds even though level 3 is sampled 1-in-20. Fine at
+  current block sizes (Task 8 splits into blocks); worth revisiting if block sizes grow.
