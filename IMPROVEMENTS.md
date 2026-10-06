@@ -244,3 +244,20 @@ Resolution priority is the project owner's call, not the implementer's.
   never be written: Task 14 runs the tournament in a `prange`, and a buffer shared across threads is a
   silent correctness bug rather than a performance one. If a future change introduces one, it will pass
   every single-threaded test in the suite and corrupt the dataset.
+
+- **Stage 11 (option tested and refuted)** — putting the search's working buffers inside `GameState` as
+  *flattened fields* does not work, and the reason is worth not re-deriving: the search calls `evaluate`,
+  `legal_actions` and `apply_action`, all of which take a `GameState`, so a buffer must **be** one. A set of
+  `spare_a_*` / `spare_b_*` fields is not. Where the buffers are allocated is irrelevant — only their type is.
+  The rules-level part works (50 extra fields, 296 tests pass, `check_invariants` unaffected), so the failure
+  is entirely at the search boundary.
+
+- **Stage 11 (learned while implementing)** — the `GameState` constructor is compiled as part of the jitclass,
+  so it rejects `setattr` with an f-string, loops over a global tuple of strings, and plain-Python helpers
+  that allocate arrays (`Untyped global name '_blank_spare'`). Anything added to `GameState.__init__` must be
+  written out explicitly. Noted in case a future option needs allocation there.
+
+- **Stage 11 (process)** — the chosen option was implemented before checking it against the one constraint
+  that mattered. The constraint was already known and written down from Stage 10: an njit entry point cannot
+  construct a `GameState`. Asking "where should the buffers live" was the wrong question; "the search needs
+  `GameState` **objects**" was the right one, and it rules out every allocation-location answer.

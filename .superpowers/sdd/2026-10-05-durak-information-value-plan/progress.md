@@ -310,3 +310,41 @@ Task 11: DESIGN CONSEQUENCE worth recording, found while implementing (1). Two s
   `apply_action` plus one extra copy per *particle* instead of per candidate, while the expensive part
   (k particles x replies x evaluate) is unchanged. That turns three spares into two, which halves the
   fields added to `GameState` and keeps the caller's `state` strictly read-only.
+
+Task 11: OPTION (a) TESTED AND NOT IMPLEMENTABLE AS DESCRIBED. The user chose "scratch inside GameState"; implemented it and it does not work. Evidence, so this is not re-attempted blind:
+
+  Flattened spare fields do not work. Adding `spare_a_*` / `spare_b_*` to the jitclass spec works at the
+  rules level (296 tests pass with 50 extra fields, `check_invariants` unaffected), but the search calls
+  `evaluate`, `legal_actions` and `apply_action`, all of which take a `GameState`. The buffer therefore has
+  to *be* a GameState, and a set of prefixed fields is not one. What exists is `state.spare_a_deck`,
+  `state.spare_a_hands`, ... -- there is no `state.spare_a` object to pass.
+
+  That is the same wall as before, not a new one: the search needs GameState objects, and an njit entry
+  point called from Python cannot construct one. Where the buffers are *allocated* is irrelevant to that;
+  only their *type* matters.
+
+  Also learned while implementing: the jitclass constructor is compiled as part of the class, so `setattr`
+  with an f-string, a loop over a global tuple of strings, and a plain-Python helper that allocates arrays
+  are all rejected there (`Untyped global name '_blank_spare'`). Any allocation added to `GameState.__init__`
+  must be written out explicitly. Reverted; not worth carrying as a constraint unless a future option needs it.
+
+  Self-referential jitclass (an `inner` field holding another GameState) is the only shape that would make
+  option (a) work, and it was NOT established. The probe failed for a reason in the probe's own class
+  construction (`NameError: name 'Recursive' is not defined`), not in Numba, so it is unresolved rather
+  than refuted. If it works it is the cheapest fix; if it does not, option (a) is dead.
+
+Task 11: REMAINING OPTIONS, corrected:
+  (a') Self-referential jitclass field. Unresolved. Cheapest if it works; test it directly before anything else.
+  (b) Extend the policy signature to carry the buffers. Known to work -- Stage 10's `expectimax` already
+      takes three states and every test drives it. Costs: `strategies/base.py`'s Policy signature, all five
+      registered policies, and the engine's `choose_action`. Mechanical, and the only option with no open
+      technical question.
+  (c) Move the search *into* the engine rather than into a policy: `play_block` allocates its own buffers via
+      a construction path that is known to work (the engine already builds states through `deal_state`), and
+      the strategy becomes an integer telling the engine how much information to give it. This is arguably
+      the right shape for the project anyway -- the strategies are a dispatch table, and the reason a policy
+      cannot allocate working memory is an ABI limitation, not a design one.
+  RECOMMENDATION: (c). It is the only option that does not fight the execution model, and it makes the
+  experiment's central claim structurally true: the two arms become one code path that receives a different
+  hand source, which is exactly what the project claims to measure.
+  NEEDS FROM USER: confirmation of (c), or a preference for (b) if the policy signature must stay pinned.
