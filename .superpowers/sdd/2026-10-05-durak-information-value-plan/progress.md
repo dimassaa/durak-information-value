@@ -236,3 +236,15 @@ CROSS-MODE GATE: PASSED. `NUMBA_DISABLE_JIT=1 pytest` -> 274 passed in 1874.30s 
       sufficient.
     - Note for whoever runs it again: run it in the background from the start of a session. At 31 minutes
       it outlives a working session, which is exactly why it stayed open across three.
+
+Task 10: COMPLETE (commit 9cbd953; tests: .venv/bin/python -m pytest -> 296 passed in 36s; NUMBA_DISABLE_JIT=1 on test_search.py+test_rules.py -> 84 passed in 2.4s).
+
+Task 10: CORRECTION to the previous two entries. The `TypeError: cannot unpack non-iterable GameState object` was NEVER a Numba problem -- it was `state, _ = setup()` in tests/test_search.py, unpacking a bare lambda that returned a GameState instead of a pair. Three hypotheses were tested and falsified (`-> tuple` annotation, stale `__pycache__`, Numba call-graph; a five-layer bisect of copy->apply->legal_actions->particle loop->candidate loop passed in full). Read the traceback's own frames next time; they named a lambda in the test module.
+Task 10: The FIRST blocker (inline `GameState(...)` in njit across the Python boundary) WAS real and probe-verified. Both findings stand; they are independent.
+Task 10: FINDING (fixed): `legal_actions` offered the defender TAKE with an empty table, which `apply_action` rejects. Unreachable in normal play but fatal to the search, which enumerates every action and applies each one.
+Task 10: RULING: caller-owned scratch -- three `GameState` buffers allocated by Python once per game, copied into by field assignment inside compiled code. One allocation per game rather than one per candidate per particle per response; a jitclass argument costs ~190 us per call from Python vs ~0.3 us compiled.
+Task 10: RULING: replies enumerated INSIDE each hypothesis, not once on the post-action state. Enumerating against the real hand would give the informed arm the opponent's actual cards for free and drive the measured advantage to ~0.
+Task 10: VERIFIED: `evaluate` correct by hand -- hands (2 vs 3), trump suit 0 -> attacker 1.8, defender 1.2, empty pile 0.3, exactly antisymmetric. Trumps and high-card terms read player-minus-opponent; card count reads opponent-minus-player.
+Task 10: RECORDED LIMITATION (pinned by a test): at depth 1 throwing dominates stopping even when every throw-in is beatable, because a beaten throw leaves both hands unchanged, a take improves the score, and STOP makes the attacker pick up the table. Fixing needs depth 2 or a sixth evaluation term -- the latter changes spec 5.4. DECISION REQUIRED before Task 12 publishes win rates.
+Task 10: RULING (test): the search's contract is asserted as "the chosen action is the argmax of `action_value`" over 200 positions, not as a comparison against RANDOM. With three throw-ins and a stop available RANDOM throws 3/4 of the time, so "beats RANDOM" would be a 100%-vs-75% claim that also passes a search doing nothing.
+Task 10: OPEN: full `NUMBA_DISABLE_JIT=1` suite must be re-run before Task 14 -- durak/rules.py changed and the last full interpreted pass predates it.

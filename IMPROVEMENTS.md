@@ -195,3 +195,38 @@ Resolution priority is the project owner's call, not the implementer's.
   and must be run in the background from the start of a session rather than scheduled at the end of one.
   That misestimate is why this gate stayed open across three stages: it was quoted as a 10-minute job
   and quietly never scheduled.
+
+- **Stage 10 — RESEARCH DECISION NEEDED, this bears on the headline result.** At depth 1 the informed
+  arm **over-attacks by construction**: after a throw-in that gets beaten both hands are unchanged, so
+  the leaf evaluation cannot distinguish it from not throwing; after a take the attacker has shed a card,
+  which scores as an improvement; and STOP in a defended round makes the attacker pick up the table,
+  which scores as a loss. So throwing dominates stopping even when every throw-in can be answered.
+
+  Two ways out, and the second changes the spec:
+  (a) depth 2, or
+  (b) a leaf evaluation that charges for cards committed to the table — which **adds a sixth term to
+      spec 5.4's five**.
+
+  This is not a bug fix and was not taken unilaterally. It matters because an informed arm that
+  over-attacks still measures something real, but not "the value of knowledge" — and the project's
+  primary question is exactly that. Task 12 should decide this before win rates are published, and the
+  choice belongs in the manifest either way.
+
+- **Stage 10** — `legal_actions` offered the defender `TAKE` with an empty table, which `apply_action`
+  rejects. Unreachable in normal play, but the two functions must agree exactly because the search
+  enumerates every action `legal_actions` returns and applies each one. Any future helper that enumerates
+  and then applies will hit the same class of disagreement, so `legal_actions`'s docstring now states the
+  invariant and what an empty array means.
+
+- **Stage 10 — process failure worth recording.** A `TypeError: cannot unpack non-iterable GameState
+  object` consumed two sessions and three wrong hypotheses (`-> tuple` annotation, stale `__pycache__`,
+  Numba call-graph). It was `state, _ = setup()` unpacking a bare lambda's return in the test itself. Each
+  hypothesis was a reasonable story; none was evidence. **Read the traceback's own frames** — they named a
+  lambda inside the test module — before hypothesising about a library. Two of the same file's "corrections"
+  were also wrong twice: a role-term assertion that was simply false about the rules (recorded as a
+  "cache anomaly" instead of being derived), and a "free card" fixture where nothing was free.
+
+- **Stage 10** — `enumerate_responses` and `responses_in` now differ deliberately: the first *overwrites*
+  the caller's buffer with the state it is given, the second acts on a buffer the caller already prepared.
+  A silent overwrite in a performance helper cost a particle-sensitivity test its entire reason for
+  existing. Every helper taking a scratch buffer documents which it does.
