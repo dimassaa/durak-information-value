@@ -146,3 +146,33 @@ Task 10: FINDING (real bug, would have shipped): in the draft `evaluate`, the tr
 Task 10: FINDING (test-design): throw-in legality requires a RANK match with a card already on the table (or, with `throwin_defense_ranks`, with a defense). Any search fixture whose attacker's cards do not share a rank with `table_attacks` offers no throw-ins, and a test that asserts "the search stops" then passes vacuously. Every decision fixture must be built around the table card's rank.
 Task 10: FINDING (Numba): `@njit` silently ignores a Python-level default argument. `expectimax(state, player, particles, weights)` with a defaulted `tunables` raised `TypeError: not enough arguments: expected 5, got 4` from inside the dispatcher. Public entry points must be thin Python wrappers over underscore-prefixed compiled implementations -- the same shape as `setup_game` wrapping `deal_state`.
 Task 10: NOTE: `Settings.eval_weights` is `(1.0, 2.0, 0.5, 0.3, 1.5)` for (card count, trumps, high cards, role, deck exhausted). Hand justifications, not fitted. The deck-exhausted term is exactly zero while the draw pile is non-empty and enters inverted (weights[4] * (cards_p - cards_o)) once it is empty, which is the only term whose sign differs from the others and the easiest to get wrong.
+
+Task 10: BLOCKER RESOLVED by probe (supersedes the "needs a decision" entry above). No plan change is required.
+
+  Probe results, in order:
+    njit(state) -> scalar, no construction            OK
+    njit(state) copying .deck / .hands                OK
+    njit(state) calling GameState(...) INLINE         FAIL  TypeError: invalid number of args: expected 8, got 7
+    njit(state) calling rules.deal_state(...)         OK
+    njit(scalars only, no state arg) -> GameState     OK
+    njit(state) + rules.apply_action(...)              OK
+    njit copy_into(dst, state), field assignment      OK, faithful over 50 copy/apply cycles
+
+  Conclusion: construction is available; only the INLINE `GameState(...)` form inside an njit function that also takes a state argument breaks the Python boundary. Routing construction through a called compiled function (as `deal_state` already does) works. The alias (`GS = rules.GameState`) is NOT the cause -- tested and ruled out.
+
+  Working design, probe-verified, no plan change needed:
+    - `durak/scratch.py` owns three reusable GameState buffers (`after`, `hypothesis`, `reply`), allocated ONCE per game on the Python side. Python CAN construct a GameState; tests/support.py does it on every fixture.
+    - `_copy_into(dst, src)` is njit, takes two states, and assigns all 24 mutable fields in place. No construction anywhere on the Python-called path.
+    - `action_value` per candidate: copy state -> `after`, apply; per particle: copy `after` -> `hypothesis`, substitute the particle's hand in place; per reply: copy `hypothesis` -> `reply`, apply, evaluate. Three buffers suffice because `after` must survive the inner loops.
+    - Public entry points are thin Python wrappers supplying defaults, because @njit silently ignores Python default arguments.
+
+  Why this matters beyond Task 10: a jitclass argument costs ~190 us per call from Python vs ~0.3 us inside compiled code. Allocating scratch per call would cost more than the search. One allocation per game is the difference between a search that can run inside a tournament and one that cannot.
+
+Task 10: NOT COMPLETE. The module was rebuilt on the working design and reached 8 failing tests before the session's context ran out; it was reverted rather than committed, so the tree is green (274 passed). What still needs doing, in order:
+  1. `TypeError: cannot unpack non-iterable GameState object` -- unresolved, appears in the search tests but NOT in `test_responses_are_exactly_the_legal_actions`, which passes. Narrow it before touching anything else; it is almost certainly a Numba return-annotation issue on a helper (`-> tuple` on a function that Numba resolves to a jitclass) rather than a logic error.
+  2. `test_the_attacker_role_scores_positive_and_the_gap_is_exactly_twice_the_weight` returned 0.0 for the attacker-seated state where 3.3 was expected. Arithmetic not yet traced -- check `_hand_profile`'s suit test (`card % 4 == trump`) and the high-rank threshold before assuming the evaluation is wrong.
+  3. The search picked STOP in both the stop-tests and the free-card rate test (0/120). Not yet diagnosed: it may be correct (see the note below) or it may be the reply-enumeration bug. Diagnose before assuming either.
+  4. `test_a_reused_scratch_restores_the_state_exactly` asserted the WRONG thing: `expectimax` legitimately leaves `scratch.after` holding the last candidate's post-action state, so the post-condition is not "the scratch equals the source". The invariant to assert is that `_copy_into` restores it, which probe 3 already verified over 50 cycles. Fix the test, not the code.
+  5. `test_the_particle_set_changes_the_decision` got the same action for a blocking and a harmless hand. Both particle sets must produce a DIFFERENT reply set for this to be observable -- verify the fixtures actually differ in beatability before concluding the search ignores particles.
+
+Task 10: NOTE on the search's expected behaviour, to check during diagnosis rather than assume. After a THROW that cannot be beaten the defender must TAKE, so the attacker's hand shrinks by one and STOP is strictly worse. After a THROW that can be beaten the round continues and the attacker may have to take anyway, so STOP can be right. But STOP in the *free-card* fixture (where the defender can only take) should be clearly worse, so a search choosing STOP there is a real defect -- not a weighting artefact.
