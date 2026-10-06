@@ -60,7 +60,38 @@ from durak.rules import (
     RuleTunables,
     settings_from_config,
 )
-from durak.strategies import InfoMode
+from durak.strategies import (
+    CHEATER_DOC,
+    INFO_PARTICLES,
+    INFO_TRUTH,
+    RANDOM,
+    SEARCH_INFORMED,
+    SEARCH_UNIFORM,
+    InfoMode,
+)
+
+
+def info_modes_for(pairing) -> tuple:
+    """The information mode each seat runs with, from the strategy it plays.
+
+    This is the project's experimental variable and it was, until now, hard-coded to ``NONE`` for every
+    seat -- which made ``SEARCH_UNIFORM`` and ``SEARCH_INFORMED`` the *same* policy on the same input, so
+    the runner measured a difference of exactly zero between the arms of the primary comparison and would
+    have reported it as a result. Deriving the modes from the strategy ids makes the difference structural:
+    a new search arm has to say which mode it wants or it inherits the prior.
+
+    ``SEARCH_INFORMED`` reads the opponent's real hand; every other strategy gets the particle set or
+    nothing, as appropriate. Neither search strategy draws from a stream, so the ``rng_state`` the runner
+    threads through is unused for them -- but the signature is uniform, so it is passed regardless.
+    """
+    def mode_for(strategy_id: int) -> int:
+        if strategy_id == SEARCH_INFORMED or strategy_id == CHEATER_DOC:
+            return INFO_TRUTH
+        if strategy_id == SEARCH_UNIFORM:
+            return INFO_PARTICLES
+        return int(InfoMode.NONE)
+
+    return mode_for(pairing.strategy_p0), mode_for(pairing.strategy_p1)
 from durak.strategies.base import StrategyId
 from durak.strategies.registry import registered_ids
 from durak.telemetry import read_parquet, write_parquet, write_manifest
@@ -289,6 +320,14 @@ def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
         raise ValueError(f"workers must be non-negative, got {workers}")
 
     grid = manifest.grid
+    if not grid:
+        # A zero-game run that reports `clean: True` is the worst possible outcome: it looks like a
+        # successful run of an empty experiment. Every tournament needs at least one pairing, and the
+        # single-strategy case cannot produce one unless the strategy is `RANDOM`.
+        raise ValueError(
+            f"the manifest for run {manifest.run_id!r} produced an empty pairing grid: strategies "
+            f"{manifest.strategies} generate no matchups. Include at least two strategies, or `RANDOM`."
+        )
     tunables = manifest.tunables
     started = time.perf_counter()
 
@@ -311,7 +350,7 @@ def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
                     game_index = start + offset
                     one, rounds, moves = play_block(
                         pairing.deck_size, pairing.strategy_p0, pairing.strategy_p1,
-                        InfoMode.NONE, InfoMode.NONE, manifest.seed, pairing.pairing_index,
+                        *info_modes_for(pairing), manifest.seed, pairing.pairing_index,
                         game_index, 1, tunables, record_rounds, record_moves,
                         run_id=0, sample_modulus=manifest.settings.sample_modulus,
                         first_attacker_override=first_attacker_override(
@@ -332,7 +371,7 @@ def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
             else:
                 outcomes, rounds, moves = play_block(
                     pairing.deck_size, pairing.strategy_p0, pairing.strategy_p1,
-                    InfoMode.NONE, InfoMode.NONE, manifest.seed, pairing.pairing_index,
+                    *info_modes_for(pairing), manifest.seed, pairing.pairing_index,
                     start, count, tunables, record_rounds, record_moves,
                     run_id=0, sample_modulus=manifest.settings.sample_modulus,
                     first_attacker_override=first_attacker_override(

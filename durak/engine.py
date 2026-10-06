@@ -74,12 +74,14 @@ from durak.rules import (
     round_cap_reached,
     trumps_in_hand,
 )
+from durak.strategies.cheater_doc import policy_cheater_doc
 from durak.strategies.policies import (
     policy_auto_attack,
     policy_auto_defend,
     policy_greedy,
     policy_random,
 )
+from durak.strategies.search_policy import policy_search
 from durak.versions import ENGINE_VERSION, RULES_VERSION, SCHEMA_VERSION
 
 # A finished game with no winner. Distinct from any seat, so a filter can never mistake a capped
@@ -227,6 +229,14 @@ def choose_action(state: GameState, player: int, strategy_id: int, info_mode: in
         return policy_random(state, player, strategy_id, info_mode, stream)
     if strategy_id == 3:
         return policy_greedy(state, player, strategy_id, info_mode, stream)
+    # Both search arms are the same function; `info_mode` is what tells them apart.
+    if strategy_id == 5:
+        return policy_search(state, player, strategy_id, info_mode, stream)
+    if strategy_id == 6:
+        return policy_search(state, player, strategy_id, info_mode, stream)
+    # A separate implementation on purpose -- see durak/strategies/cheater_doc.py.
+    if strategy_id == 7:
+        return policy_cheater_doc(state, player, strategy_id, info_mode, stream)
 
     raise ValueError("strategy id has no policy")
 

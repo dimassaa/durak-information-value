@@ -43,13 +43,20 @@ from durak.actions import (
 )
 from durak.evaluation import EVAL_WEIGHTS
 from durak.opponent import _draw_particles, _unseen_into
-from durak.rules import GameState, legal_actions
+from durak.strategies.base import InfoMode
+from durak.rules import GameState
 from durak.search import expectimax
 
 #: Particles drawn per decision when the hand is *not* known. The informed arm overrides this with 1, so
 #: the two arms differ in the source of the hypothesis and never in how many hypotheses are averaged over a
 #: hand they can see exactly.
 PARTICLE_COUNT = 100
+
+#: Pinned spellings of the two information modes, so callers need not import the enum to say which arm
+#: they mean. Named here rather than at the call site because "the arm with the real hand" is the single
+#: most consequential constant in the project and it should appear in exactly one place.
+INFO_TRUTH = int(InfoMode.TRUTH)
+INFO_PARTICLES = int(InfoMode.PARTICLES)
 
 
 @njit(cache=True)
@@ -103,7 +110,7 @@ def policy_search(state: GameState, player: int, strategy_id: int, info_mode: in
     opponent = 1 - player
 
     # --- the only thing that differs between the arms ---------------------------
-    if info_mode == 2:  # InfoMode.TRUTH
+    if info_mode == INFO_TRUTH:
         particles = _truth_particles(state, opponent)
     else:
         particles = _prior_particles(state, opponent, PARTICLE_COUNT, np.uint64(rng_state))

@@ -79,6 +79,11 @@ def pairing_grid(strategy_ids, deck_sizes=(36,), both_directions: bool = True,
                  regimes=REGIMES) -> list:
     """Every matchup to run, as a flat ordered list of :class:`Pairing`.
 
+    A single strategy that is not `RANDOM` yields an **empty** grid: there is nothing to pair it against,
+    and a strategy playing itself is only meaningful as the symmetry baseline the document specifies.
+    Callers must therefore always include an opponent -- the runner raises rather than reporting a
+    zero-game success, and the sweeps pair against `RANDOM`.
+
     `strategy_ids` are the strategies under test; each appears against every other, plus
     ``RANDOM`` against itself. `both_directions` emits each unordered pairing twice, once per
     seat assignment.

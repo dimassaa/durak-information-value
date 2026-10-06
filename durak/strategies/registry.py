@@ -21,6 +21,7 @@ from durak.strategies.policies import (
     policy_greedy,
     policy_random,
 )
+from durak.strategies.cheater_doc import policy_cheater_doc
 from durak.strategies.search_policy import policy_search
 
 # Keyed by the pinned integer, not the enum member, so the dispatch inside compiled code is a
@@ -34,6 +35,10 @@ _POLICIES = {
     # which is what makes their win-rate difference attributable to information and to nothing else.
     int(StrategyId.SEARCH_UNIFORM): policy_search,
     int(StrategyId.SEARCH_INFORMED): policy_search,
+    # Deliberately a separate implementation from `policy_search` -- see durak/strategies/cheater_doc.py.
+    # Sharing the code would make the document's specification unmeasurable: the two would agree only
+    # because they are one function.
+    int(StrategyId.CHEATER_DOC): policy_cheater_doc,
 }
 
 _NAMES = {

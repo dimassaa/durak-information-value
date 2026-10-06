@@ -27,6 +27,7 @@ from durak.actions import (
 from durak.cards import rank_of, suit_of
 from durak.strategies import (
     SEARCH_INFORMED,
+    CHEATER_DOC,
     SEARCH_UNIFORM,
     AUTO_ATTACK,
     AUTO_DEFEND,
@@ -47,7 +48,8 @@ T = rules.DEFAULT_SETTINGS
 # that they are not silently available in the meantime. The two search arms are implemented as
 # ONE function, so they are listed separately here only to keep the ids visible; `test_the_two_search_ids_
 # resolve_to_the_same_function` in `tests/test_search.py` pins the sharing.
-IMPLEMENTED = (AUTO_ATTACK, AUTO_DEFEND, RANDOM, GREEDY, SEARCH_UNIFORM, SEARCH_INFORMED)
+IMPLEMENTED = (AUTO_ATTACK, AUTO_DEFEND, RANDOM, GREEDY, SEARCH_UNIFORM, SEARCH_INFORMED,
+                CHEATER_DOC)
 
 # Positions a policy is asked about. Real random-play positions, not constructed ones: a
 # constructed position exercises one rule and misses the interactions a policy meets.
@@ -119,7 +121,7 @@ def test_unimplemented_ids_are_not_dispatchable():
     A stub that returned a random move for an unimplemented id would produce a plausible,
     wrong dataset for the experiment's headline comparison.
     """
-    for strategy_id in (StrategyId.CONSERVATIVE, StrategyId.CHEATER_DOC):
+    for strategy_id in (StrategyId.CONSERVATIVE,):
         with pytest.raises(ValueError, match="unknown strategy"):
             get_policy(int(strategy_id))
 

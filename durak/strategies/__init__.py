@@ -13,9 +13,9 @@ objects -- the tournament runs its games inside a Numba ``prange`` loop where ne
 supported, and a policy carrying hidden state would make a seeded run irreproducible.
 
 Implemented now: the two throwaway auto drivers, which exist so the engine can generate games
-before the real policies exist, ``RANDOM``, ``GREEDY``, and the two search arms.
-``CONSERVATIVE`` and ``CHEATER_DOC`` remain reserved ids that ``get_policy`` refuses rather
-than stubs.
+before the real policies exist, ``RANDOM``, ``GREEDY``, the two search arms, and the
+document's Cheater. ``CONSERVATIVE`` remains a reserved id that ``get_policy`` refuses
+rather than stubs.
 """
 
 from durak.strategies.base import InfoMode, Policy, StrategyId
@@ -26,7 +26,8 @@ from durak.strategies.policies import (
     policy_random,
 )
 from durak.strategies.registry import get_policy, policy_names, registered_ids
-from durak.strategies.search_policy import policy_search
+from durak.strategies.cheater_doc import policy_cheater_doc
+from durak.strategies.search_policy import INFO_PARTICLES, INFO_TRUTH, policy_search
 
 # The pinned spellings, re-exported so callers write `from durak.strategies import GREEDY`
 # rather than reaching through two modules for an enum member.
@@ -36,18 +37,30 @@ RANDOM = int(StrategyId.RANDOM)
 GREEDY = int(StrategyId.GREEDY)
 SEARCH_UNIFORM = int(StrategyId.SEARCH_UNIFORM)
 SEARCH_INFORMED = int(StrategyId.SEARCH_INFORMED)
+CHEATER_DOC = int(StrategyId.CHEATER_DOC)
+
+#: The two information modes, pinned. `INFO_TRUTH` is the informed arm: the opponent's real hand as a
+#: single particle. Everything else is sampled from the prior. These are re-exported from the search policy
+#: rather than spelled out there as literals, so "the arm with perfect knowledge" appears in exactly one
+#: place in the source.
+INFO_TRUTH = INFO_TRUTH
+INFO_PARTICLES = INFO_PARTICLES
 
 __all__ = [
     "AUTO_ATTACK",
     "AUTO_DEFEND",
     "GREEDY",
     "RANDOM",
+    "CHEATER_DOC",
     "SEARCH_INFORMED",
     "SEARCH_UNIFORM",
+    "INFO_PARTICLES",
+    "INFO_TRUTH",
     "InfoMode",
     "Policy",
     "StrategyId",
     "get_policy",
+    "policy_cheater_doc",
     "policy_search",
     "policy_auto_attack",
     "policy_auto_defend",
