@@ -475,3 +475,40 @@ Task 12: BLOCKING FINDING, NOT DIAGNOSED. Both search arms fail to terminate a l
   both terms reward hoarding at that boundary. Whether that is the mechanism is unverified; the alternative is
   that the depth-1 leaf systematically prefers taking over progressing. Distinguishing them is the next task.
   This must be settled before any win rate is published, and it bears on whether depth 1 can be kept at all.
+
+Task 12: NON-TERMINATION MECHANISM, now traced rather than guessed. A single capped game, traced action by
+  action, shows an exact repeating cycle from round 0 to the 10,000-round cap:
+
+    step      round actor attacker chose           hands deck table
+    0             0   p1       1     ATTACK(8)      6/6  24    0/0
+    1             0   p0       1     TAKE           6/5  24    1/0
+    2             1   p0       0     ATTACK(10)     7/6  23    0/0
+    ...          ... identical block, repeating to step 11,999 and beyond
+
+  Four facts, all measured, and together they are the bug:
+    1. The defender ALWAYS takes, never beats, even when a beating card exists in their hand.
+    2. The attacker NEVER throws in -- `throw_ins` is 0 in every round of every traced game.
+    3. The draw pile is never consumed: `deck_remaining` is 23 at step 3,000, 6,000 and 11,997.
+    4. Hand sizes oscillate 6/6 -> 7/6 -> 6/7 forever. Two cards ping-pong between the players and no
+       net progress is made, so no hand ever empties and the game never terminates.
+
+  So the stalemate is: take instead of beat, and never add to the table. Cards cycle, the deck is never
+  drawn, and 10,000 rounds pass.
+
+  COST, and it answers the performance complaint: the search runs at 179 games/s against `GREEDY`'s
+  22,948 -- 128x slower -- and a capped game is 10,000 rounds against `GREEDY`'s median of 21, so a capped
+  game is roughly 300x the work of a normal one. The 30-minute sweep was this defect, not a separate
+  performance problem: a quarter of the games were costing hundreds of times what they should.
+
+  NOT ISOLATED, and stated as open rather than guessed: the leaf arithmetic scores beating ABOVE taking.
+  Measured directly on a constructed position with an empty pile: after a beat 2.3, after stop 1.2, after
+  a take -0.8. So the evaluation wants the defender to beat, and the search takes anyway. The bug is
+  therefore in one of three places, and I did not isolate which:
+    (a) the reply enumeration handing the defender no BEAT in the hypothesis actually used;
+    (b) the leaf being scored from the wrong seat when the *defender* is the acting player;
+    (c) the second-ply assumption in `action_value`: for a BEAT the code hardcodes ply 2 as STOP, which is
+        legal but ignores the attacker's throw-ins, and a wrong ply-2 model can invert the comparison.
+  (b) and (c) are the most likely, because the leaf is written from the acting player's perspective and
+  `action_value` special-cases BEAT and TAKE differently from ATTACK/THROW. Next task: instrument one
+  defending position, print `action_value` per legal action and per reply, and compare against
+  `leaf_profile_after` called directly with the same hands.
