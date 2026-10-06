@@ -187,3 +187,11 @@ Resolution priority is the project owner's call, not the implementer's.
   hands (2 vs 3), trump suit 0, weights (1.0, 2.0, 0.5, 0.3, 1.5) give 1.8 attacker / 1.2 defender with
   a full draw pile and 0.3 attacker with an empty one, exactly matching `1*(3-2) + 0.5*(1-0) + 0.3`,
   `1.8 - 2*0.3`, and `1.8 + 1.5*(2-3)`. Antisymmetry is exact. Do not re-derive it.
+
+- **Stage 10** — the full `NUMBA_DISABLE_JIT=1` suite takes **31 minutes**, not the ~11 previously
+  recorded. Against 58-64 seconds compiled that is about 30x, not the ~90x guessed when the estimate was
+  first made. The cost is per-action interpreted dispatch in the engine, so it grows with test count
+  rather than with anything expensive in the engine itself — meaning it gets *worse* as the suite grows,
+  and must be run in the background from the start of a session rather than scheduled at the end of one.
+  That misestimate is why this gate stayed open across three stages: it was quoted as a 10-minute job
+  and quietly never scheduled.

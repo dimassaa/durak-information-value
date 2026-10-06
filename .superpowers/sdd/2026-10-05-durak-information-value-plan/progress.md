@@ -222,3 +222,17 @@ Task 10: SECOND ATTEMPT. Blocker from the previous entry confirmed solved; modul
   These may share one cause. Check the most basic thing first: whether the defender's reply set inside a
   hypothesis actually contains the beat. A search that never sees a BEAT can only ever conclude "the
   opponent takes", which would produce all three symptoms at once.
+
+CROSS-MODE GATE: PASSED. `NUMBA_DISABLE_JIT=1 pytest` -> 274 passed in 1874.30s (31:14), 748 warnings, on the tree at 46b12e5. This closes the item open since Stage 6. All warnings are the intended uint64 wraparound in durak/rng.py (`overflow encountered in scalar add`), which Numba's overflow-check elision removes when compiled.
+
+  Correction to an earlier estimate: this was recorded as "~11 minutes" from Stage 6 onward. It is 31 minutes interpreted against 58-64 seconds compiled, a ratio of about 30x, not the ~90x guessed earlier. The cost is dominated by the per-action interpreted dispatch in the engine, so it scales with test count rather than with anything expensive in the engine itself.
+
+  What the gate does and does not cover:
+    - COVERS: every test, both execution modes, on this exact tree. It is the formal guarantee that the
+      Numba path and the Python path agree.
+    - DOES NOT COVER: Task 14's `prange` port, which introduces a partitioning dimension this run has
+      never exercised. The `test_worker_count_does_not_change_the_dataset` test remains trivially
+      satisfied until Task 15, as its own docstring says. So this gate is necessary for Task 14 and not
+      sufficient.
+    - Note for whoever runs it again: run it in the background from the start of a session. At 31 minutes
+      it outlives a working session, which is exactly why it stayed open across three.
