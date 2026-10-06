@@ -129,3 +129,31 @@ Resolution priority is the project owner's call, not the implementer's.
   planned sweep, `durak/config.py:particle_count`) should measure *diversity* at each step, not just
   the accuracy of the final marginal, or they will report that larger k helps without capturing why
   it stops helping.
+
+- **Stage 10 (blocked)** — an `@njit` function called from Python cannot construct a `GameState`.
+  Isolated by probe: passing a state in, copying `.deck`/`.hands`, and calling `rules.apply_action`
+  from Python all work; calling `GameState(...)` inside a compiled function raises
+  `TypeError: invalid number of args: expected 8, got 7` from Numba's `ArgPacker`. The engine's
+  `deal_state` constructs and *is* called from Python, so this is not a blanket prohibition -- it
+  appears to depend on whether the jitclass is already resolved when the calling dispatcher is built.
+  That dependency must be pinned down before the search is written, because every design in the
+  search depends on who is allowed to create states. Task 10 is blocked on it; see the ledger.
+
+- **Stage 10 (blocked)** — `@njit` silently ignores Python-level default arguments. A function with a
+  defaulted `tunables` raises `TypeError: not enough arguments: expected N, got N-1` from inside the
+  dispatcher rather than applying the default. Every public entry point that needs a default must be
+  a thin Python wrapper over an underscore-prefixed compiled implementation.
+
+- **Stage 10 (bug found, work reverted)** — the draft evaluation had the trumps and high-card terms
+  inverted. Fewer cards is good, so the card-count term reads opponent-minus-player; but *more* trumps
+  and *more* high cards are also good, so those must read player-minus-opponent. As written the search
+  shed its trumps first, and two of the five weights were reversed. `test_more_trumps_scores_positive`
+  caught it. The lesson is worth keeping regardless of the code: with an even number of terms and a
+  shared "opponent minus player" pattern, sign errors in the minority of terms are invisible until a
+  test asserts each term's direction individually.
+
+- **Stage 10 (test design)** — throw-in legality requires a *rank* match with a card already on the
+  table (or, with `throwin_defense_ranks`, with a defense on it). A search fixture whose attacker's
+  cards do not share a rank with `table_attacks` offers no throw-ins at all, and a test asserting "the
+  search stops rather than throwing" then passes vacuously. Every decision fixture must be built around
+  the table card's rank, and must assert that the throw-ins it expects actually exist.
