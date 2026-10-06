@@ -176,3 +176,49 @@ Task 10: NOT COMPLETE. The module was rebuilt on the working design and reached 
   5. `test_the_particle_set_changes_the_decision` got the same action for a blocking and a harmless hand. Both particle sets must produce a DIFFERENT reply set for this to be observable -- verify the fixtures actually differ in beatability before concluding the search ignores particles.
 
 Task 10: NOTE on the search's expected behaviour, to check during diagnosis rather than assume. After a THROW that cannot be beaten the defender must TAKE, so the attacker's hand shrinks by one and STOP is strictly worse. After a THROW that can be beaten the round continues and the attacker may have to take anyway, so STOP can be right. But STOP in the *free-card* fixture (where the defender can only take) should be clearly worse, so a search choosing STOP there is a real defect -- not a weighting artefact.
+
+Task 10: SECOND ATTEMPT. Blocker from the previous entry confirmed solved; module still not finished. Reverted again to keep the tree green (274 passed, 58.33s). State is materially sharper than last time.
+
+  CONFIRMED by probe: the inline-`GameState(...)` constraint is real and the caller-owned scratch design works. `_copy_into(dst, src)` assigns all 24 fields faithfully over 50 copy/apply cycles.
+
+  CONFIRMED: `durak/evaluation.py` is CORRECT. Isolated probe on hands (2 vs 3), trump suit 0:
+      attacker seat, full deck   ->  1.8000   (1*(3-2) + 0.5*(1-0) + 0.3, trumps 0, correct)
+      defender seat, full deck   ->  1.2000   (1.8 - 2*0.3, exactly antisymmetric)
+      attacker seat, empty pile  ->  0.3000   (1.8 + 1.5*(2-3), term 4 inverted, correct)
+    All three match hand arithmetic, and evaluate(state,0) == -evaluate(state,1) exactly.
+
+  RULED OUT as the cause of `TypeError: cannot unpack non-iterable GameState object`:
+    - the `-> tuple` return annotation on a profile helper. Removing it (out-parameters, then a single
+      inlined loop with scalar accumulators) did NOT fix the error.
+    - the alias vs qualified `rules.GameState` reference (ruled out earlier).
+  So the error originates in `durak/search.py`, not `evaluation.py`. It appears at the
+  `expectimax(...)` call in every search test. `enumerate_responses` -- which also does
+  `_copy_into` + `apply_action` + `legal_actions` and is Python-called -- PASSES, so it is not
+  `_copy_into` and not `apply_action` in isolation. The difference is that `_expectimax` calls
+  `action_value`, which calls `evaluate` and `legal_actions` inside compiled code.
+  NEXT STEP: bisect by calling a Python-visible wrapper around `action_value` alone, with no
+  candidate loop. That separates "evaluate compiled inside a larger graph" from "the candidate loop".
+
+  ANOMALY worth chasing first, because it may be the same root cause: the pure-`evaluate` tests
+  (`test_the_attacker_role_scores_positive_and_the_gap_is_exactly_twice_the_weight`) FAIL under
+  pytest but the identical call PASSES in a standalone script. Same fixtures, same module. Something
+  about test-collection order, a stale Numba cache entry, or `pytest-xdist` is affecting the compiled
+  function. Try `-p no:cacheprovider -n 0` and a cleared `__pycache__` before investigating the
+  evaluation at all -- a "fails in the suite, passes standalone" signal is almost always the cache.
+
+  Test bugs found and fixed in the draft (they are mine, not the code's):
+    - `test_copy_into_restores_the_source_exactly` indexed `legal_actions(...)[-1]` on an empty array;
+      guard it.
+    - `test_the_particle_set_changes_the_decision` passed a pre-substituted scratch to
+      `enumerate_responses`, which unconditionally re-copies the state and so wiped the substitution.
+      Both hypotheses then produced the reply set `{TAKE}`. Build the reply set by hand from the
+      substituted state instead, or add an `enumerate_responses_in` that does not re-copy.
+    - Fixtures for particle-sensitivity must differ in BEATABILITY, not merely in hand contents.
+
+  Unresolved search behaviour, listed as observations rather than diagnoses:
+    - the search chose THROW over STOP in the "opponent can beat every throw-in" fixture;
+    - it chose the off-suit rank-6 card over the rank-6 trump in the trump fixture (chose card 24, not 27);
+    - it found the free card 0/120 times.
+  These may share one cause. Check the most basic thing first: whether the defender's reply set inside a
+  hypothesis actually contains the beat. A search that never sees a BEAT can only ever conclude "the
+  opponent takes", which would produce all three symptoms at once.
