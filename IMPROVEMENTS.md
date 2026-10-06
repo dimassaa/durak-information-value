@@ -157,3 +157,33 @@ Resolution priority is the project owner's call, not the implementer's.
   cards do not share a rank with `table_attacks` offers no throw-ins at all, and a test asserting "the
   search stops rather than throwing" then passes vacuously. Every decision fixture must be built around
   the table card's rank, and must assert that the throw-ins it expects actually exist.
+
+- **Stage 10 (blocked, second attempt)** — `TypeError: cannot unpack non-iterable GameState object` is
+  **not** caused by a `-> tuple` return annotation. Removing it (first to out-parameters, then to a
+  single inlined loop with scalar accumulators) did not fix it. The error originates in the search
+  module, not the evaluation module, and `enumerate_responses` — which does the same
+  `_copy_into` + `apply_action` + `legal_actions` sequence from Python — passes. Bisect next with a
+  Python-visible wrapper around `action_value` alone and no candidate loop.
+
+- **Stage 10 (blocked, second attempt)** — a pure-`evaluate` test **fails under pytest but passes
+  standalone** with the same fixtures and the same module. Until that is explained, do not debug the
+  evaluation: try `-p no:cacheprovider -n 0` with a cleared `__pycache__` first. "Fails in the suite,
+  passes in a script" is almost always a stale Numba cache entry or test-order pollution, and chasing
+  the logic first wastes the whole diagnosis.
+
+- **Stage 10 (blocked, second attempt)** — three search-behaviour failures share one symptom: the
+  search chose THROW where STOP was right, chose the off-suit card where the unbeatable trump was
+  right, and found the free card 0/120 times. All three are what a search that **never sees a BEAT
+  reply** would produce, since it would conclude the opponent can only take. The first diagnostic
+  should be whether the reply set inside a hypothesis actually contains the beat — not the weights.
+
+- **Stage 10 (bug in my test)** — passing a pre-substituted scratch buffer to `enumerate_responses`
+  silently does nothing: the function unconditionally re-copies the state first. Both particle
+  hypotheses therefore produced the identical reply set `{TAKE}`, and the particle-sensitivity test
+  failed for a reason that had nothing to do with the search. Any function taking a scratch and
+  populating it should say whether it overwrites it.
+
+- **Stage 10 (confirmed, carry forward)** — the leaf evaluation is **correct**, verified by hand:
+  hands (2 vs 3), trump suit 0, weights (1.0, 2.0, 0.5, 0.3, 1.5) give 1.8 attacker / 1.2 defender with
+  a full draw pile and 0.3 attacker with an empty one, exactly matching `1*(3-2) + 0.5*(1-0) + 0.3`,
+  `1.8 - 2*0.3`, and `1.8 + 1.5*(2-3)`. Antisymmetry is exact. Do not re-derive it.
