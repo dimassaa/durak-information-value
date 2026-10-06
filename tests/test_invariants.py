@@ -168,14 +168,20 @@ def test_invariants_hold_after_every_transition_at_scale(deck_size):
     Driving the loop from Python instead is about 400x slower for the same invariant: a
     ``jitclass`` argument is boxed and unboxed on every call, roughly 190 microseconds per action
     against roughly 0.3 through the compiled loop. A version of this test that walked from Python
-    checked 300,000 transitions in 57 seconds. This one checks roughly 37 million transitions
-    across both deck sizes.
+    checked 300,000 transitions in 57 seconds.
 
-    5,000 games per deck, halved from 10,000 for cycle time. The claim is a sample and not a
-    proof: it shows the invariant survived 37 million transitions of varied play, which is why
-    it is stated as a floor (``> 15 million``) rather than as an exact count.
+    The game count is 300,000 per deck, not the 5,000 it was when this test was written. The old figure
+    was calibrated while `AUTO_DEFEND` still stalled: about 5% of its games ran to the 10,000-round cap,
+    which inflated the transition count without testing anything the short games do not. With the take
+    rule fixed, games average roughly 20 rounds instead of roughly 1,000, so the same 5,000 games yield
+    300,000 transitions rather than 37 million -- the invariant was still being checked, just three
+    orders of magnitude thinner than the floor this test asserts. The floor stays; the sample was
+    enlarged to meet it honestly rather than the floor being lowered to meet the sample.
+
+    The claim remains a sample and not a proof: it shows the invariant survived a large number of
+    transitions of varied play, which is why it is stated as a floor (``> 15 million``).
     """
-    outcomes = autoplay(deck_size, games=5_000, seed=7, strategy_p0=AUTO_ATTACK,
+    outcomes = autoplay(deck_size, games=300_000, seed=7, strategy_p0=AUTO_ATTACK,
                         strategy_p1=AUTO_DEFEND)
 
     assert not outcomes["flag_card_conservation_violation"].any()
@@ -285,16 +291,22 @@ def test_card_conservation_holds_across_whole_games():
 def test_a_capped_game_is_flagged_and_never_scored_as_a_loss():
     """A game stopped at the cap has no winner, and must not be recorded as one.
 
-    `AUTO_DEFEND` is used precisely because it *does* stall: measured, it hits the cap in about
-    5% of games, from the genuine always-legal-take hole in the rules. So this is not a synthetic
-    scenario -- it is a real class of outcome that the dataset will contain, and the point of the
-    test is that such a game carries `winner = -1` and `flag_round_cap_hit = True` rather than
-    being scored as a loss for whoever happened to be attacking.
+    `AUTO_DEFEND` was previously chosen because it *did* stall -- about 5% of its games hit the cap.
+    That stalling was the rules bug: a take handed the turn to the taker, who re-attacked the card it had
+    just taken, and the two passed it back and forth forever. With the rule fixed, `AUTO_DEFEND` never
+    reaches the cap, so there is no longer a natural strategy that produces one.
+
+    The guarantee under test is therefore asserted on the invariant that still holds -- a decided game
+    has a real winner, and nothing is scored as a loss without one -- rather than on a class of outcome
+    that the corrected rules cannot produce. The cap machinery itself is still reachable through the
+    engine's own limit, and the search arms are covered by the telemetry audit instead.
     """
     outcomes = autoplay(36, games=3000, seed=29, strategy=AUTO_DEFEND)
 
     capped = outcomes["flag_round_cap_hit"]
-    assert capped.any(), "AUTO_DEFEND was expected to stall sometimes; it no longer does"
+    decided = outcomes["winner"] >= 0
+    assert not decided[capped].any(), "a game stopped at the cap must not carry a winner"
+    assert (outcomes["winner"][~capped] >= 0).all(), "every game that finished must name a winner"
     assert np.all(outcomes["winner"][capped] == -1), "a capped game was scored as a result"
     assert np.all(outcomes["winner_final_hand"][capped] == 0)
     assert np.all(outcomes["loser_final_hand"][capped] == 0)
@@ -604,7 +616,13 @@ def test_win_from_a_single_card_is_measured_not_assumed_away():
 
     The confirmed win rule -- an empty hand is a win, checked before the defender responds --
     makes this the normal way a game ends, not an edge case. Measured over 2,000 random games on
-    a 36-card deck it is about 0.68, i.e. roughly two games in three.
+    a 36-card deck it was about 0.68 under the buggy take rule, and is about 0.90 now.
+
+    The rise is a direct consequence of fixing that rule, not a new degeneration. After a take the
+    original attacker keeps attacking, so the attacking seat keeps shedding cards while its opponent's
+    hand grows; the player who empties a hand is therefore overwhelmingly the one who was last
+    attacking, and an empty hand ends the round before the defender can answer. That is the correct
+    shape of the game, and the winner is not skewed: measured 0.494 for seat 0 against 0.505 for seat 1.
 
     The number is pinned inside a band rather than at an exact value, because it is a property of
     the rule set and the policies, not a constant: a change to the win rule or to the endgame
@@ -615,10 +633,16 @@ def test_win_from_a_single_card_is_measured_not_assumed_away():
 
     single = outcomes["win_from_single_card_p0"] | outcomes["win_from_single_card_p1"]
     assert single.any()
-    assert 0.5 < single.mean() < 0.85, (
+    assert 0.75 < single.mean() < 0.97, (
         f"{single.mean():.3f} of games ended with an unopposed last-card attack; the win "
         f"rule's endgame degeneracy has moved and the rules report needs revisiting"
     )
+
+    # The band above is only meaningful if the corrected rule did not skew the seats. Without this the
+    # 0.90 could equally well be read as "the attacker now almost always wins", which would be a
+    # different and more serious defect.
+    winners = outcomes["winner"]
+    assert 0.45 < (winners == 0).mean() < 0.55, "the seats must stay symmetric"
 
     # The same statistic for the 52-card deck, recorded rather than compared. An earlier draft of
     # this test asserted that a bigger deck would make the ending *less* common, on the reasoning

@@ -626,3 +626,63 @@ Task 12: TRANSFER-NEUTRALITY CORRECTION IMPLEMENTED, AND IT DID NOT FIX THE NON-
   cap. That is a rules change (a new terminal outcome) and needs the user's call. The alternative is
   depth 2+, which is expensive and still does not detect repetition -- it only makes the search avoid
   some stalemates by accident.
+
+Task 12: ROOT CAUSE FOUND, AND IT WAS A RULES BUG, NOT A SEARCH OR EVALUATION DEFECT.
+
+  THE BUG. `rules._do_take` ended the round with `_begin_next_round(state, defender)`, handing the turn to
+  the player who had just taken the cards. In Durak a take does not pass the lead: the original attacker
+  keeps attacking and the taker skips the round. That is what makes it the *podkidnoy* variant.
+
+  MECHANISM, and it explains every symptom at once. The taker re-attacked the card it had just taken. The
+  opponent could not beat it -- in a 6-card endgame it usually could not -- so it took it straight back,
+  and the two passed one card back and forth. Hence: no card ever reached the discard, so the pile was
+  never consumed; the attacker's hand could not fall below six, so the refill never ran; the card count was
+  conserved, so nothing terminated. The traced cycle -- p1 ATTACK(2), p0 TAKE, p0 ATTACK(2), p1 TAKE --
+  is this rule, verbatim.
+
+  MEASURED AFTER THE FIX (60 games per arm, 36-card deck, vs RANDOM):
+    arm        capped      median rounds   mean    max     games/s
+    informed   0/60            36.5        36.3     59      4852
+    uniform    0/60            36.0        36.5     62        60
+    greedy     0/60            19.5        19.4     28     34724
+    random     0/60            29.0        29.2     45     29883
+  Before: 16/60 and 21/60 capped, median 80-82, mean 2718-3544, informed at 179 games/s.
+
+  The speed complaint is resolved as a consequence, not as a separate fix: the informed arm is 28x faster
+  than it was because its games are 75x shorter. Nothing was optimised; the stall was removed.
+
+  I WAS WRONG TWICE ABOUT THE CAUSE, and both errors are recorded above rather than edited out. First I
+  blamed the deck-exhausted evaluation term, on a trace of one game at rounds 100-1600; measuring all 16
+  capped games showed the pile was EMPTY and the discard held 26-32 cards, so they were deep endgame
+  games, not games frozen near the start. Second I blamed "a transfer reads as progress" and fixed it.
+  That fix is real and independently correct -- a transfer is not progress -- but it changed nothing about
+  the non-termination, which is how I learned it was not the cause.
+
+  THE SAME BUG WAS IN THE LEAF. `leaf.py` flipped `player_attacks` on every round end. The roles swap on a
+  successful defense only; after a take the original attacker keeps attacking. Same rule, reproduced in the
+  role bookkeeping, so every post-take leaf scored the wrong seat for the role term (0.6 of the observed
+  2.6 discrepancy). Fixed to flip only when neither ply was a TAKE.
+
+  THE ARMS NOW GENUINELY DIVERGE: over 44,750 decisions from 300 games the informed and uniform arms chose
+  differently 5,922 times, 13.2%. This is the quantity the whole project exists to measure, and before the
+  rules fix both arms converged on the same non-terminating cycle.
+
+  TESTS CHANGED, and each change is a case of a test that had encoded the bug:
+    * test_take_does_not_swap_roles asserted `attacker == 1` under a name saying the roles do not swap.
+      Renamed to test_a_take_leaves_the_attack_with_the_original_attacker and inverted.
+    * test_a_capped_game_is_flagged... required AUTO_DEFEND to stall; it no longer can. Now asserts the
+      invariant that still holds: no capped game carries a winner, every finished game does.
+    * test_invariants_hold_after_every_transition_at_scale asserted >15M transitions, a floor that was
+      being met by the stall itself. 5,000 -> 300,000 games so the sample meets the floor honestly.
+    * test_win_from_a_single_card... measured 0.68 and now measures 0.90. Real, and a consequence of the
+      fix: the attacking seat keeps shedding cards, and an empty hand ends the round before the defender
+      answers. Added a seat-symmetry assertion (0.494 vs 0.505) so the rise cannot be mistaken for the
+      attacker winning too often.
+    * test_the_two_arms_score_differently... filtered to `attacker == 0`, which after the fix left 59 of
+      120 positions and a floor of 5 against an observed 3. Now uses both seats -- a stronger case, since
+      it exercises the BEAT branch -- and 400 seeds.
+    * test_version_constants_start_at_one asserted the stamps equal 1, making it a check that the project
+      had never changed its rules. Replaced with presence, monotonicity, and RULES_VERSION >= 2.
+    * ENGINE_VERSION 1 -> 2, RULES_VERSION 1 -> 2, so no pre-fix dataset can be pooled with a post-fix one.
+
+  SUITE: 320 passed compiled. The interpreted cross-mode gate is running.

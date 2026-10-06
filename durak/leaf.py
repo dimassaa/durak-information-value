@@ -80,6 +80,33 @@ def _stats(hand, size: int, trump: int, out) -> None:
 
 
 @njit(cache=True)
+def _acc(card: int, trump: int, out) -> None:
+    """Add one card's (count, trumps, high) contribution to `out`.
+
+    The per-card form of `_stats`. A card in flight between hands still belongs to whoever played it,
+    so the transfer accounting needs a card's stats without rebuilding a whole hand array.
+    """
+    out[0] += 1
+    if np.uint64(np.int64(card)) % np.uint64(4) == np.uint64(trump):
+        out[1] += 1
+    if rank_of(card) >= HIGH_RANK:
+        out[2] += 1
+
+
+@njit(cache=True)
+def _table_stats(table, table_size: int, trump: int, out) -> None:
+    """Accumulate the stats of every card on the table -- the attacker's cards.
+
+    On a TAKE these are exactly the cards that change hands. The defenses are not: the defender plays
+    them and picks them straight back up, so they leave their hand and return, and their hand size nets
+    to zero on its own. Only the attacker's cards genuinely migrate, and every card on the table belongs
+    to the attacker, because the attack does not change until the round ends.
+    """
+    for i in range(table_size):
+        _acc(table[i], trump, out)
+
+
+@njit(cache=True)
 def reply_cards(state, defender: int, target: int) -> np.ndarray:
     """Cards in `defender`'s hand that beat `target`. The replacement for `legal_actions` here.
 
@@ -179,10 +206,15 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
     player_attacks = (int(state.attacker) == player)
     round_ends = False
 
+    # Stats of the cards that change hands during these plies, split by original owner. Fed to `_finish`,
+    # which neutralises them: a transfer is not progress. See `_finish` for why all three stats travel.
+    moved_p = np.zeros(3, dtype=np.int64)
+    moved_o = np.zeros(3, dtype=np.int64)
+
     # --- ply 1: `player` acts ---------------------------------------------------
     if player_attacks:
         if kind_a == STOP:
-            # Table to the discard, no hand grows, round ends.
+            # Table to the discard, no hand grows, round ends. Nothing migrated: the cards left play.
             round_ends = True
         elif kind_a == ATTACK or kind_a == THROW:
             size_p = _remove_card(mine, size_p, card_a)
@@ -190,11 +222,13 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
             table_size += 1
             if size_p == 0:
                 return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks,
-                               weights)
+                               weights, moved_p, moved_o)
         else:
             raise ValueError(f"an attacking player cannot play kind {kind_a}")
     else:
         if kind_a == TAKE:
+            # `player` is the defender, so the table holds the opponent's attacks: they migrate.
+            _table_stats(table, table_size, trump, moved_o)
             _collect(theirs, size_o, table, table_size, defenses, defense_count)
             size_o += table_size + defense_count
             round_ends = True
@@ -204,7 +238,7 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
             defense_count += 1
             if size_p == 0:
                 return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks,
-                               weights)
+                               weights, moved_p, moved_o)
         else:
             raise ValueError(f"a defending player cannot play kind {kind_a}")
 
@@ -223,7 +257,7 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
                 table_size += 1
                 if size_o == 0:
                     return _finish(mine, size_p, theirs, size_o, trump, player, deck_len,
-                                   not player_attacks, weights)
+                                   not player_attacks, weights, moved_p, moved_o)
             else:
                 raise ValueError(f"an attacking opponent cannot play kind {kind_b}")
         else:
@@ -231,6 +265,9 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
             if kind_b == BEAT:
                 size_o = _remove_card(theirs, size_o, card_b)
             elif kind_b == TAKE:
+                # `player` is the attacker here, so the table holds `player`'s own attacks and those are
+                # the cards that migrate to the opponent.
+                _table_stats(table, table_size, trump, moved_p)
                 _collect(theirs, size_o, table, table_size, defenses, defense_count)
                 size_o += table_size + defense_count
                 round_ends = True
@@ -247,9 +284,16 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
         else:
             size_o, deck_len = _refill_one(theirs, size_o, deck, deck_len)
             size_p, deck_len = _refill_one(mine, size_p, deck, deck_len)
-        player_attacks = not player_attacks
 
-    return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks, weights)
+        # The roles swap on a *successful defense* only. After a STOP the attacker hands over the lead;
+        # after a TAKE the original attacker keeps attacking and the taker skips the round. Flipping
+        # unconditionally was the same rules bug as in `rules._do_take`, reproduced in the leaf's role
+        # bookkeeping, and it made every post-take leaf score the wrong seat for the role term.
+        if kind_b != TAKE and kind_a != TAKE:
+            player_attacks = not player_attacks
+
+    return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks, weights,
+                   moved_p, moved_o)
 
 
 @njit(cache=True)
@@ -265,12 +309,37 @@ def _collect(hand, size: int, table, table_size: int, defenses, defense_count: i
 
 @njit(cache=True)
 def _finish(mine, size_p: int, theirs, size_o: int, trump: int, player: int, deck_len: int,
-            player_attacks: bool, weights) -> float:
-    """The five terms of `evaluate`, from two hand arrays and four scalars."""
+            player_attacks: bool, weights, moved_p, moved_o) -> float:
+    """The five terms of `evaluate`, from two hand arrays and four scalars.
+
+    `moved_p` and `moved_o` are the (count, trumps, high) stats of the cards that changed hands during
+    the plies, split by their original owner: `moved_p` is what left the acting player's hand, `moved_o`
+    what left the opponent's. A card handed to the opponent and picked up again has not left play, so it
+    must not read as progress -- otherwise a depth-1 leaf scores *feeding the opponent a card they cannot
+    beat* identically to winning a trick, and both arms settle into an unbreakable cycle that never
+    terminates (measured: 27-35% of games capped at the round limit, the draw pile never consumed).
+
+    Neutralising the transfer means undoing it in the stats: subtract what left each hand and add it back
+    to the player it came from. All three hand-reading terms are corrected together on purpose. Correcting
+    only the count leaves the trump term swinging the other way and the pair still sums to a gain, which
+    leaves the cycle intact.
+
+    A card that reaches the *discard* is not in `moved_p`/`moved_o` and keeps its credit. That asymmetry is
+    the whole point: discarding is progress, transferring is not.
+    """
     stats_p = np.zeros(3, dtype=np.int64)
     stats_o = np.zeros(3, dtype=np.int64)
     _stats(mine, size_p, trump, stats_p)
     _stats(theirs, size_o, trump, stats_o)
+
+    # Undo the transfer, per original owner, before any term reads the stats. A card that left `player`'s
+    # hand is credited back to `player` and debited from the opponent, and vice versa: the card is scored
+    # as if it had never changed hands.
+    for k in range(3):
+        stats_p[k] += moved_p[k]
+        stats_o[k] -= moved_p[k]
+        stats_o[k] += moved_o[k]
+        stats_p[k] -= moved_o[k]
 
     value = weights[0] * (stats_o[0] - stats_p[0])
     value += weights[1] * (stats_p[1] - stats_o[1])

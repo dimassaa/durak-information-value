@@ -609,16 +609,28 @@ def test_take_collects_the_table_into_the_defenders_hand():
     assert rules.check_invariants(state) == 0
 
 
-def test_take_does_not_swap_roles():
+def test_a_take_leaves_the_attack_with_the_original_attacker():
+    """The rule that makes this the *podkidnoy* variant: the taker passes, the attacker keeps going.
+
+    An earlier version of this test asserted the opposite -- `state.attacker == 1`, the taker attacks
+    next -- under a name that said "the roles do not swap". The name and the assertion contradicted each
+    other, and the assertion matched the bug, so the contradiction went unnoticed.
+
+    Getting this wrong is not a cosmetic error. It lets the taker immediately re-attack the card it just
+    took; the opponent cannot beat it, so it takes it straight back; and the two pass one card back and
+    forth indefinitely. Measured before the fix: 16/60 and 21/60 games per arm hit the 10,000-round cap,
+    with the draw pile never consumed.
+    """
     pool = Pool()
     attack = pool.reserve(card_at(0, 1))
     state = legal_state(pool.take(6), pool.take(6), trump=3, attacker=0,
                         table_attacks=[attack])
+    defender = rules.acting_player(state)
 
     rules.apply_action(state, pack_action(TAKE, 0), T)
 
-    # After a take the defender, who now holds the cards, attacks next.
-    assert state.attacker == 1
+    assert state.attacker == 0, "after a take the original attacker must still be attacking"
+    assert rules.acting_player(state) != defender, "the player who took must skip the round"
 
 
 def test_voluntary_take_is_recorded_when_a_beat_was_available():

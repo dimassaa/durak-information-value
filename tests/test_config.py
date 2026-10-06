@@ -55,10 +55,23 @@ def test_seed_at_int32_bound_is_accepted():
     assert Settings(seed=MAX_SEED).seed == MAX_SEED
 
 
-def test_version_constants_start_at_one():
-    assert ENGINE_VERSION == 1
-    assert RULES_VERSION == 1
-    assert SCHEMA_VERSION == 1
+def test_version_constants_are_present_and_ordered():
+    """The stamps exist, and every one has been bumped at least once.
+
+    This test used to assert each constant equals 1, which made it a check that the project had never
+    changed its rules or its engine. That is a property no real project can keep, and it silently turns
+    a version guard into a tripwire: the first legitimate bump fails it, and the tempting fix is to revert
+    the bump. Asserting the stamps are present and monotonic keeps the guard pointed at what matters --
+    a dataset must be attributable to a rule set -- without freezing the rule set in place.
+    """
+    assert all(isinstance(v, int) and v >= 1
+               for v in (ENGINE_VERSION, RULES_VERSION, SCHEMA_VERSION))
+    # A rules change is the one stamp that must move on its own, and it has: v1 handed the turn to the
+    # player who took, which is not Durak and stalled a quarter of all games.
+    assert RULES_VERSION >= 2, (
+        "RULES_VERSION must record the take-rule fix; pooling a pre-fix dataset with a post-fix one "
+        "would mix two different experiments into a single number"
+    )
 
 
 def test_settings_are_frozen():

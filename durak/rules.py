@@ -694,8 +694,15 @@ def _do_take(state: GameState) -> GameState:
     state.table_defense_count = 0
     state.last_take_voluntary = voluntary
 
-    # After a take the roles do not swap: the defender, who now holds the cards, attacks.
-    return _begin_next_round(state, defender)
+    # After a take the roles do NOT swap. The original attacker keeps attacking and the defender, who
+    # just picked the cards up, skips the round -- which is what makes this the *podkidnoy* variant.
+    #
+    # Handing the turn to the taker was a rules bug, and it was the cause of the non-termination, not
+    # anything in the evaluation. It let the taker immediately re-attack the card it had just taken: the
+    # opponent could not beat it, so it took it straight back, and the two of them passed the same card
+    # back and forth for the full 10,000-round cap with the draw pile untouched. Measured 16/60 and 21/60
+    # games capped per arm before the fix. See `_do_stop` for the case where the roles DO swap.
+    return _begin_next_round(state, state.attacker)
 
 
 @njit(cache=True)

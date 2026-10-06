@@ -213,22 +213,32 @@ def test_the_two_arms_score_differently_on_some_position():
     from durak.search import expectimax
 
     different = total = 0
-    for seed in range(120):
+    for seed in range(400):
         state = random_position(deck_size=36, seed=seed, max_actions=8 + seed % 15)
-        if state.winner != rules.EMPTY or int(state.attacker) != 0:
+        if state.winner != rules.EMPTY:
             continue
-        hand1 = [int(c) for c in state.hands[1, : state.hand_sizes[1]]]
+        # Both seats are used, not only the attacker. The `attacker == 0` filter used to be a way of
+        # picking attacking positions for convenience, but it costs more sample than the test can afford:
+        # after the take rule was corrected, it left only 59 usable positions out of 120, and a floor
+        # of 5 on 59 samples sits close enough to the observed 3 that the test was measuring its own
+        # sample size. `leaf_profile_after` is role-general, so a defender's position exercises the same
+        # path and is a legitimate -- in fact a stronger -- case, since it takes the BEAT branch.
+        player = int(state.attacker)
+        opponent = 1 - player
+        hand1 = [int(c) for c in state.hands[opponent, : state.hand_sizes[opponent]]]
         if len(hand1) < 2:
             continue
         # A belief differing from the truth by one card, drawn from the same unseen set.
         swap = hand1[0]
         replacement = next(c for c in range(36)
-                          if c not in hand1 and c not in set(int(x) for x in state.hands[0]))
+                          if c not in hand1
+                          and c not in set(int(x) for x in state.hands[player]))
         total += 1
         truth = np.asarray([sorted(hand1)], dtype=np.int16)
         belief = np.asarray([sorted([replacement] + hand1[1:])], dtype=np.int16)
 
-        different += int(expectimax(state, 0, truth, W)) != int(expectimax(state, 0, belief, W))
+        different += int(expectimax(state, player, truth, W)) != \
+            int(expectimax(state, player, belief, W))
 
     assert total > 25, f"only {total} positions were usable"
     # The measured rate is about 10%. It is low by construction, not by defect: swapping one card changes

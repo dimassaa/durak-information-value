@@ -13,6 +13,10 @@ The research dataset mixes these in derived aggregates, so a stale stamp is not 
 bookkeeping detail: it silently mixes two different experiments into one number.
 """
 
-ENGINE_VERSION = 1
-RULES_VERSION = 1
+ENGINE_VERSION = 2
+# 2: after a take the original attacker keeps attacking and the taker skips the round. Version 1 had the
+# turn handed to the taker, which let it re-attack the card it had just taken; the two players passed one
+# card back and forth indefinitely and 16-21% of games per arm hit the round cap. Any dataset produced
+# under version 1 contains that bias and must not be pooled with anything produced after this bump.
+RULES_VERSION = 2
 SCHEMA_VERSION = 1

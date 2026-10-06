@@ -87,15 +87,106 @@ def test_the_leaf_transition_matches_the_engine_for_an_attack_and_a_beat():
 
 
 def test_the_leaf_transition_matches_the_engine_for_an_attack_and_a_take():
-    """TAKE: the defender picks up the table, becomes the attacker, and both refill."""
+    """TAKE still reproduces the engine's hands, roles and deck -- and differs only in the transfer.
+
+    The differential property survives the correction, and that is the point of pinning it this narrowly.
+    The leaf tracks the table, the two refills and the role flip exactly as the rules do; what it
+    deliberately does NOT do is credit the attacker's shed card to the defender as progress. So the two
+    disagree, by exactly the value of the transfer, and the test asserts both halves:
+
+    * the leaf equals the engine profile when the transferred cards are put back where they came from;
+    * the residual equals the hand-reading terms evaluated on those cards alone.
+
+    Before the correction this test asserted exact equality and passed. Demanding exact equality now
+    would assert the defect back into existence.
+    """
     state, pristine = _twin_states()
 
     after = rules.apply_action(state, pack_action(THROW, card_at(0, 1)), T)
     after = rules.apply_action(after, pack_action(TAKE, 0), T)
 
     mine, theirs = _hypothesised_hands(pristine)
-    assert leaf_profile_after(pristine, 0, THROW, card_at(0, 1), TAKE, 0, mine, theirs, W) == \
-        pytest.approx(_evaluate_profile(profile(after, 0)), abs=1e-9)
+    transferred = card_at(0, 1)
+    engine_profile = _evaluate_profile(profile(after, 0))
+
+    # The engine's own reading, minus the transfer's contribution, must equal the leaf. The transfer is
+    # one non-trump, non-high card, so the count term accounts for the whole 2.0 gap and nothing else does.
+    trumps = int(transferred % 4 == int(pristine.trump))
+    high = 1 if rank_of(transferred) >= HIGH_RANK else 0
+    residual = -W[0] * 2 - W[1] * 2 * trumps - W[2] * 2 * high
+
+    assert leaf_profile_after(pristine, 0, THROW, transferred, TAKE, 0, mine, theirs, W) == \
+        pytest.approx(engine_profile + residual, abs=1e-9), (
+            "the leaf must differ from the engine by exactly the transfer's value and nothing else"
+        )
+
+
+def _transfer_fixture():
+    """A position where the defender may legally either TAKE or BEAT the same attack.
+
+    Trump is suit 0. The attacker throws a suit-1 card of rank 0 and the defender holds one trump, so both
+    replies are legal and the two leaves differ in exactly one respect -- whether the attack reaches the
+    discard or changes hands. Everything else is held fixed, so any score difference is attributable to
+    the transfer alone. An earlier version of this fixture put a card on the table that was in neither
+    hand, which made both replies illegal and had the test asserting numbers from a position the rules
+    cannot reach.
+
+    Returns the state, the throw card, a beater inside the defender's hand, and the hand arrays.
+    """
+    hands0 = [card_at(r, 1) for r in range(6)]                    # attacker: ranks 0-5, suit 1
+    hands1 = [card_at(0, 0)] + [card_at(r, 2) for r in range(5)]  # defender: one trump, five suit-2
+    throw = card_at(0, 1)                                         # suit 1, rank 0
+    beat = card_at(0, 0)                                          # the trump, in hands1
+    state = legal_state(hands0, hands1, trump=0, attacker=0)
+    return state, throw, beat, np.array(hands0, dtype=np.int16), np.array(hands1, dtype=np.int16)
+
+
+def test_a_take_is_neutral_rather_than_progress():
+    """Handing the opponent a card must not improve the score of the player who handed it over.
+
+    The regression this pins. A take moves the attack from the attacker's hand to the defender's, so the
+    count term `cards_opponent - cards_player` improves by 2 and the trump term moves with it. A depth-1
+    leaf then scores *giving the opponent a card they cannot beat* the same as winning a trick, and both
+    search arms converge on handing the same card back and forth forever -- measured at 27-35% of games
+    capped at the 10,000-round limit, with hands frozen and the draw pile never consumed.
+
+    Neutral is the correct semantics, not merely a smaller number: a transfer changes who holds a card
+    without removing it from play, and only a card that reaches the discard is progress.
+
+    The value is compared against a position where the very same card is *discarded* rather than taken.
+    Discarding leaves play, so it must score strictly better than transferring.
+    """
+    state, throw, beat, mine, theirs = _transfer_fixture()
+    weights = np.array([1.0, 2.0, 0.5, 0.3, 1.5])
+
+    taken = leaf_profile_after(state, 0, THROW, throw, TAKE, 0, mine, theirs, weights)
+
+    # The defender instead beats with a trump: the throw then reaches the discard on STOP.
+    discarded = leaf_profile_after(state, 0, THROW, throw, BEAT, beat, mine, theirs, weights)
+
+    assert discarded > taken, (
+        f"discarding scored {discarded:+.4f}, taking scored {taken:+.4f}; a card that leaves play "
+        f"must beat a card that only changes hands"
+    )
+
+
+def test_the_transfer_correction_does_not_flatten_the_hand_count_term():
+    """The count term must still separate a genuine shed card from a kept one.
+
+    Guards against over-correcting. If the fix had simply zeroed the count term whenever a card moved, the
+    search would have no gradient toward emptying its hand at all -- a different degenerate game rather
+    than the correct one.
+    """
+    state, throw, beat, mine, theirs = _transfer_fixture()
+    weights = np.array([1.0, 0.0, 0.0, 0.0, 0.0])
+
+    taken = leaf_profile_after(state, 0, THROW, throw, TAKE, 0, mine, theirs, weights)
+    discarded = leaf_profile_after(state, 0, THROW, throw, BEAT, beat, mine, theirs, weights)
+
+    assert discarded - taken == pytest.approx(1.0, abs=1e-9), (
+        f"expected the discard to beat the take by exactly 1.0 on the count term, got "
+        f"{discarded - taken:+.4f}"
+    )
 
 
 def test_the_leaf_transition_matches_the_engine_for_stop():
