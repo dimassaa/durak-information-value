@@ -531,8 +531,11 @@ def acting_player(state: GameState) -> int:
 def legal_actions(state: GameState, player: int) -> np.ndarray:
     """Every action available to ``player``, as a packed ``int32`` array.
 
-    The defender may always take. For the attacker mid-round, stopping is always
-    available.
+    Every action listed here must be applicable by :func:`apply_action`. The search relies on that:
+    it enumerates the opponent's replies from this function and then applies each one, so any action
+    offered here but rejected there makes the search fail rather than merely misbehave. An empty array
+    means the player has no legal move, which happens for a defender facing an empty table -- there is
+    nothing to beat and nothing to take.
     """
     out = np.empty(HAND_CAPACITY + 2, dtype=np.int32)
     count = 0
@@ -559,15 +562,19 @@ def legal_actions(state: GameState, player: int) -> np.ndarray:
                 out[count] = pack_action(STOP, 0)
                 count += 1
     else:
-        if state.table_attack_count > state.table_defense_count:
-            target = int(state.table_attacks[state.table_defense_count])
-            for i in range(size):
-                card = int(state.hands[player, i])
-                if beats(card, target, state.trump):
-                    out[count] = pack_action(BEAT, card)
-                    count += 1
-        out[count] = pack_action(TAKE, 0)
-        count += 1
+        # Taking is only a thing you can do when there is something on the table. Offering it with an
+        # empty table contradicts `apply_action`, which rejects it -- and the search enumerates every
+        # action `legal_actions` returns and applies each one, so the two have to agree exactly.
+        if state.table_attack_count > 0:
+            if state.table_attack_count > state.table_defense_count:
+                target = int(state.table_attacks[state.table_defense_count])
+                for i in range(size):
+                    card = int(state.hands[player, i])
+                    if beats(card, target, state.trump):
+                        out[count] = pack_action(BEAT, card)
+                        count += 1
+            out[count] = pack_action(TAKE, 0)
+            count += 1
 
     return out[:count]
 
