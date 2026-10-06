@@ -47,9 +47,18 @@ from durak.config import Settings
 from durak.runner import RunManifest, run_tournament
 from durak.strategies import RANDOM, SEARCH_INFORMED, SEARCH_UNIFORM
 
-#: Particle counts swept by default. Wide enough that a plateau is visible if there is one, and it is the
-#: default rather than a per-run choice precisely so nobody picks the flattering end of it afterwards.
-DEFAULT_K_VALUES = (25, 50, 100, 200, 400)
+#: Particle counts this sweep CANNOT currently vary, and why.
+#:
+#: The particle count is the module constant `search_policy.PARTICLE_COUNT` (100), baked into the compiled
+#: policy's call. `Settings.particle_count` is recorded for reproducibility and `__post_init__` now
+#: rejects any value that disagrees with it, so constructing a sweep cell with a different `k` raises
+#: rather than silently running the same search twice.
+#:
+#: It is kept as a one-element tuple rather than deleted so the report can say what the open question is:
+#: whether `delta` is stable across `k` is UNMEASURED. A previous version of this module swept 25/100/400
+#: and reported three identical win rates, which reads exactly like a robustness result and is in fact a
+#: constant measured three times.
+DEFAULT_K_VALUES = (100,)
 
 
 def _manifest(run_id: str, strategies, games: int, seed: int, settings: Settings,
@@ -69,12 +78,17 @@ def _manifest(run_id: str, strategies, games: int, seed: int, settings: Settings
 
 def particle_sweep(out_dir, k_values=DEFAULT_K_VALUES, games: int = 2_000, seed: int = 0,
                    deck_size: int = 36) -> pd.DataFrame:
-    """Win rate per particle count, for the uninformed arm.
+    """The uninformed arm's win rate at the single particle count the engine actually uses.
 
-    Only `SEARCH_UNIFORM` is swept: the informed arm reads the real hand as a single particle, so ``k`` does
-    not apply to it. Sweeping it anyway would produce a flat line and imply the parameter does something.
+    Kept under its original name because the report and the plan refer to a sweep over `k`, and renaming
+    the function would hide the fact that the planned sweep is still OPEN rather than completed. It is a
+    single-row baseline, not a robustness check.
 
-    Returns one row per ``k`` with the arm's win rate and the games behind it.
+    Only `SEARCH_UNIFORM` appears: the informed arm reads the real hand as one particle, so `k` does not
+    apply to it at all.
+
+    Passing any `k` other than `PARTICLE_COUNT` raises out of `Settings.__post_init__`. That is the point:
+    a caller who believes the parameter is live gets an error rather than a duplicated row.
     """
     import dataclasses
 

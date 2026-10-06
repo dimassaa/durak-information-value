@@ -46,6 +46,18 @@ class Settings:
     # 0 means "decide at runtime from cpu_count", mirroring the convention the
     # runner adopts; it is not a request for zero workers.
     workers: int = 0
+    # Recorded in the manifest because it is part of the reproducibility contract, NOT because it
+    # configures anything. The particle count actually used is the module constant
+    # `durak.strategies.search_policy.PARTICLE_COUNT`, which is baked into the compiled policy's
+    # signature. `__post_init__` enforces that this field agrees with it, so the two can never drift
+    # apart silently.
+    #
+    # This previously read as a live knob and was not one: `particle_sweep` varied it, the sweep wrote
+    # a `particle_sweep.csv`, and the three `k` values produced byte-identical win rates -- because the
+    # field reached nothing. Any claim that `delta` is stable across `k` is therefore UNMEASURED. Making
+    # the field authoritative would mean threading an int through `choose_action`, which is an njit
+    # if/elif chain called from a `prange` loop, and from there through `policy_search` and every other
+    # policy signature -- a real change, tracked as an open question rather than assumed done.
     particle_count: int = 100
     sample_modulus: int = 20
     throwin_defense_ranks: bool = True
@@ -62,6 +74,16 @@ class Settings:
             )
         if self.particle_count < 1:
             raise ValueError(f"particle_count must be positive, got {self.particle_count}")
+        # The recorded value must equal what the search actually uses. Without this check the two can
+        # drift, and the failure is invisible: a manifest would record one particle count while the
+        # engine ran another, which is exactly the kind of error the manifest exists to prevent.
+        from durak.strategies.search_policy import PARTICLE_COUNT
+        if self.particle_count != PARTICLE_COUNT:
+            raise ValueError(
+                f"particle_count={self.particle_count} but the search uses "
+                f"{PARTICLE_COUNT}. This field is recorded for reproducibility and does not configure "
+                f"the search; making it authoritative requires threading it through choose_action."
+            )
         if self.sample_modulus < 1:
             raise ValueError(f"sample_modulus must be positive, got {self.sample_modulus}")
         if len(self.eval_weights) != 5:

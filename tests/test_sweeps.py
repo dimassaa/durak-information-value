@@ -17,6 +17,7 @@ from durak.analysis.sweeps import (
     weight_sweep,
 )
 from durak.evaluation import EVAL_SWEEP_GRID
+from durak.strategies.search_policy import PARTICLE_COUNT
 from durak.opponent import initial_particles
 from durak.rng import RngStream
 from durak.search import expectimax
@@ -114,12 +115,19 @@ def test_the_cheater_reads_no_particles_and_no_stream():
 # --- the sweeps ---------------------------------------------------------------
 
 
-def test_the_default_particle_grid_is_wide_and_starts_low():
-    """Wide, and pinned, so nobody picks the flattering end of it after seeing results."""
-    assert set(DEFAULT_K_VALUES) == {25, 50, 100, 200, 400}
-    assert min(DEFAULT_K_VALUES) <= 25
-    assert max(DEFAULT_K_VALUES) >= 400
-    assert len(DEFAULT_K_VALUES) >= 5
+def test_the_particle_sweep_cannot_vary_k_and_says_so():
+    """The grid is pinned to the one value the engine honours, so nobody invents a `k` sweep.
+
+    This test previously asserted the grid was wide and started low -- five values from 25 to 400 -- which
+    was the right instinct (pin the grid so nobody picks the flattering end of it after seeing results) but
+    had stopped describing reality. The count is a compiled-in constant, so every cell of that sweep ran
+    the identical search and reported the identical number.
+
+    Keeping the grid pinned to `PARTICLE_COUNT` means a caller who widens it gets an error from
+    `Settings.__post_init__` rather than a table of constant rows that reads like a robustness check.
+    """
+    assert tuple(DEFAULT_K_VALUES) == (PARTICLE_COUNT,)
+    assert len(DEFAULT_K_VALUES) == 1
 
 
 def test_the_weight_grid_has_a_baseline_and_moves_one_weight_at_a_time():
@@ -131,20 +139,41 @@ def test_the_weight_grid_has_a_baseline_and_moves_one_weight_at_a_time():
         assert len([i for i, factor in enumerate(row) if factor != 1.0]) <= 1
 
 
-def test_a_particle_sweep_returns_one_row_per_k(tmp_path):
+def test_the_particle_sweep_runs_at_the_one_count_the_engine_uses(tmp_path):
     """Run live at four games per cell: the point is the shape of the result, not its values.
 
     A four-game cell has a Wilson interval of roughly +/- 0.5, so nothing about the *numbers* is claimed.
-    What is claimed is that every requested ``k`` produces a row, that the row carries the games behind it,
-    and that the configuration is recorded in the row -- a sweep whose settings live only in the command
-    line is not a result.
-    """
-    frame = particle_sweep(tmp_path, k_values=(25, 50), games=4, seed=1)
+    What is claimed is that a row is produced, that it carries the games behind it, and that the
+    configuration is recorded in the row -- a sweep whose settings live only in the command line is not a
+    result.
 
-    assert list(frame["k"]) == [25, 50]
+    The single row is the honest outcome. This sweep can no longer vary ``k``; see ``DEFAULT_K_VALUES``
+    for the reason and for the question that stays open as a result.
+    """
+    frame = particle_sweep(tmp_path, games=4, seed=1)
+
+    assert list(frame["k"]) == [PARTICLE_COUNT], (
+        "the sweep runs at the one particle count the engine uses"
+    )
     assert (frame["games"] > 0).all()
     assert (frame["settings"].str.contains("particle_count")).all()
     assert (tmp_path / "particle_sweep.csv").exists()
+
+
+def test_requesting_a_particle_count_the_engine_does_not_use_is_refused(tmp_path):
+    """A `k` the search cannot honour must raise, not quietly run the same search twice.
+
+    This is the regression test for a silent defect that had been shipping for several stages.
+    `particle_sweep` accepted 25/100/400, wrote three rows, and the three win rates came out identical --
+    because `Settings.particle_count` reached nothing and the count was the constant
+    `search_policy.PARTICLE_COUNT`. A sweep whose rows cannot differ is worse than no sweep: it looks
+    like the robustness check the plan asked for, and it is the same number three times.
+
+    The guard now lives in `Settings.__post_init__`, so it also protects every other caller that
+    constructs settings rather than just this sweep.
+    """
+    with pytest.raises(ValueError, match="particle_count"):
+        particle_sweep(tmp_path, k_values=(25,), games=4, seed=1)
 
 
 def test_a_weight_sweep_returns_a_row_per_grid_point_with_both_arms_and_a_delta(tmp_path):
