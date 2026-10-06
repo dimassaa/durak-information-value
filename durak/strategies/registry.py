@@ -22,6 +22,7 @@ from durak.strategies.policies import (
     policy_random,
 )
 from durak.strategies.cheater_doc import policy_cheater_doc
+from durak.strategies.conservative import policy_conservative
 from durak.strategies.search_policy import policy_search
 
 # Keyed by the pinned integer, not the enum member, so the dispatch inside compiled code is a
@@ -31,6 +32,9 @@ _POLICIES = {
     int(StrategyId.AUTO_DEFEND): policy_auto_defend,
     int(StrategyId.RANDOM): policy_random,
     int(StrategyId.GREEDY): policy_greedy,
+    # Reads the particle filter's aggregate counts and applies hand rules, with no leaf arithmetic and no
+    # reply enumeration. A different point on the strength axis, not a cheaper copy of the search.
+    int(StrategyId.CONSERVATIVE): policy_conservative,
     # Both search arms are the *same* function. `InfoMode` is the only input that differs between them,
     # which is what makes their win-rate difference attributable to information and to nothing else.
     int(StrategyId.SEARCH_UNIFORM): policy_search,

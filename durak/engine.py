@@ -75,6 +75,7 @@ from durak.rules import (
     trumps_in_hand,
 )
 from durak.strategies.cheater_doc import policy_cheater_doc
+from durak.strategies.conservative import policy_conservative
 from durak.strategies.policies import (
     policy_auto_attack,
     policy_auto_defend,
@@ -229,6 +230,9 @@ def choose_action(state: GameState, player: int, strategy_id: int, info_mode: in
         return policy_random(state, player, strategy_id, info_mode, stream)
     if strategy_id == 3:
         return policy_greedy(state, player, strategy_id, info_mode, stream)
+    # The particle filter's aggregate counts, applied as hand rules rather than as a search.
+    if strategy_id == 4:
+        return policy_conservative(state, player, strategy_id, info_mode, stream)
     # Both search arms are the same function; `info_mode` is what tells them apart.
     if strategy_id == 5:
         return policy_search(state, player, strategy_id, info_mode, stream)

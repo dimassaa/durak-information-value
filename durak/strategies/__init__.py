@@ -14,8 +14,8 @@ supported, and a policy carrying hidden state would make a seeded run irreproduc
 
 Implemented now: the two throwaway auto drivers, which exist so the engine can generate games
 before the real policies exist, ``RANDOM``, ``GREEDY``, the two search arms, and the
-document's Cheater. ``CONSERVATIVE`` remains a reserved id that ``get_policy`` refuses
-rather than stubs.
+document's Cheater, and ``CONSERVATIVE``, which reads the particle filter's aggregate counts as
+hand rules rather than running a search.
 """
 
 from durak.strategies.base import InfoMode, Policy, StrategyId
@@ -27,6 +27,7 @@ from durak.strategies.policies import (
 )
 from durak.strategies.registry import get_policy, policy_names, registered_ids
 from durak.strategies.cheater_doc import policy_cheater_doc
+from durak.strategies.conservative import policy_conservative
 from durak.strategies.search_policy import INFO_PARTICLES, INFO_TRUTH, policy_search
 
 # The pinned spellings, re-exported so callers write `from durak.strategies import GREEDY`
@@ -35,6 +36,7 @@ AUTO_ATTACK = int(StrategyId.AUTO_ATTACK)
 AUTO_DEFEND = int(StrategyId.AUTO_DEFEND)
 RANDOM = int(StrategyId.RANDOM)
 GREEDY = int(StrategyId.GREEDY)
+CONSERVATIVE = int(StrategyId.CONSERVATIVE)
 SEARCH_UNIFORM = int(StrategyId.SEARCH_UNIFORM)
 SEARCH_INFORMED = int(StrategyId.SEARCH_INFORMED)
 CHEATER_DOC = int(StrategyId.CHEATER_DOC)
@@ -52,6 +54,7 @@ __all__ = [
     "GREEDY",
     "RANDOM",
     "CHEATER_DOC",
+    "CONSERVATIVE",
     "SEARCH_INFORMED",
     "SEARCH_UNIFORM",
     "INFO_PARTICLES",
@@ -61,6 +64,7 @@ __all__ = [
     "StrategyId",
     "get_policy",
     "policy_cheater_doc",
+    "policy_conservative",
     "policy_search",
     "policy_auto_attack",
     "policy_auto_defend",

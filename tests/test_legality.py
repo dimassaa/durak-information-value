@@ -33,6 +33,7 @@ from durak.strategies import (
     AUTO_DEFEND,
     GREEDY,
     RANDOM,
+    CONSERVATIVE,
     InfoMode,
     StrategyId,
     get_policy,
@@ -48,8 +49,13 @@ T = rules.DEFAULT_SETTINGS
 # that they are not silently available in the meantime. The two search arms are implemented as
 # ONE function, so they are listed separately here only to keep the ids visible; `test_the_two_search_ids_
 # resolve_to_the_same_function` in `tests/test_search.py` pins the sharing.
-IMPLEMENTED = (AUTO_ATTACK, AUTO_DEFEND, RANDOM, GREEDY, SEARCH_UNIFORM, SEARCH_INFORMED,
-                CHEATER_DOC)
+IMPLEMENTED = (AUTO_ATTACK, AUTO_DEFEND, RANDOM, GREEDY, CONSERVATIVE, SEARCH_UNIFORM,
+                SEARCH_INFORMED, CHEATER_DOC)
+
+#: Ids the plan reserves but the registry deliberately refuses to dispatch. `CONSERVATIVE` sat here until
+#: Task 13 implemented it; the list is kept so a newly added strategy has to be added to `IMPLEMENTED`
+#: rather than appearing in the registry unannounced.
+RESERVED = ()
 
 # Positions a policy is asked about. Real random-play positions, not constructed ones: a
 # constructed position exercises one rule and misses the interactions a policy meets.
@@ -120,10 +126,19 @@ def test_unimplemented_ids_are_not_dispatchable():
 
     A stub that returned a random move for an unimplemented id would produce a plausible,
     wrong dataset for the experiment's headline comparison.
+
+    `RESERVED` is empty now that Task 13 has landed `CONSERVATIVE`: every id the plan names is
+    implemented, so there is nothing left for this to catch. It is kept as a list so that the next
+    reserved strategy has a place to be declared, and so the assertion below continues to mean something
+    rather than silently passing over an empty tuple.
     """
-    for strategy_id in (StrategyId.CONSERVATIVE,):
+    for strategy_id in RESERVED:
         with pytest.raises(ValueError, match="unknown strategy"):
             get_policy(int(strategy_id))
+
+    assert set(registered_ids()) == {int(i) for i in StrategyId}, (
+        "every pinned StrategyId must now be dispatchable; if one is not, it belongs in RESERVED"
+    )
 
 
 def test_policy_names_cover_every_implemented_id():
