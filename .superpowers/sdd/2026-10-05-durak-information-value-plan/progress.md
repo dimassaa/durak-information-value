@@ -429,3 +429,49 @@ Task 11: RULES, extracted from durak/rules.py and easy to get backwards:
     player holding twelve cards draws nothing. A finished game is never refilled.
   - `wait`: BEAT does NOT trigger a refill (it does not end the round), and neither does ATTACK/THROW.
     Only TAKE and STOP refill. Getting that wrong double-counts the deck.
+
+Task 11: COMPLETE (commit 50cc861). The scratch problem was solved by removing the need rather than by working
+  around it: `durak/leaf.py` computes the depth-1 leaf profile as arithmetic over two card arrays, because
+  that is all `evaluate` reads (each hand's size, trump count and high-card count; the attacker; whether
+  the pile is empty). No derived state is materialised, no scratch buffer exists, `durak/scratch.py` is
+  deleted, and the caller's state stays strictly read-only.
+
+Task 11: TESTS: 301 passed compiled; NUMBA_DISABLE_JIT=1 full suite 304 passed in 1843.74s (30:43) -- cross-mode gate green.
+
+Task 11: TWO RULES WERE WRONG IN STAGE 10 AND ARE CORRECTED IN 50cc861. STOP sends the table to the DISCARD and
+  grows neither hand; only a TAKE fills the defender's hand. Both end the round and both leave `attacker`
+  flipped, so they differ only in which hand grew. The Stage 10 claim "STOP makes the attacker pick up the
+  table" was false, and the "depth-1 always over-attacks" limitation rested on it. With the leaf arithmetic
+  corrected, STOPPING wins in several fixtures, including one where the search keeps its trump. The
+  property is fixture-dependent; two tests now pin both directions. The earlier commit message and ledger
+  entries are wrong on this point and are superseded by this one -- history is not rewritten.
+
+Task 12: PARTIAL (commit 10e4315). CHEATER_DOC implemented literally and separately from the search, and the
+  three sweeps implemented. 318 passed compiled.
+
+Task 12: CRITICAL FIX -- the primary comparison was unmeasurable. `run_tournament` passed `InfoMode.NONE` to
+  every seat, so SEARCH_UNIFORM and SEARCH_INFORMED were the same policy on the same input. The arms would
+  have measured a difference of exactly zero and reported it as a result. Nothing caught it: both are legal,
+  both are deterministic, and every legality and smoke test passed on each. `info_modes_for(pairing)` now
+  derives the mode from the strategy id and follows the strategy into whichever seat it plays.
+
+Task 12: FIX -- `pairing_grid` returns an empty grid for a single non-RANDOM strategy, and `run_tournament`
+  then reported 0 games with `clean: True`. A zero-game run reporting success is indistinguishable from a
+  successful run of an empty experiment. The runner raises; the sweeps pair against RANDOM.
+
+Task 12: BLOCKING FINDING, NOT DIAGNOSED. Both search arms fail to terminate a large fraction of games:
+    uniform-vs-random   60 games, 21 capped (35%), rounds median 80,  mean 3544
+    informed-vs-random  60 games, 16 capped (27%), rounds median 82,  mean 2718
+    greedy-vs-random    60 games,  0 capped ( 0%), rounds median 20,  mean   22
+  The "informed" arm is supposed to be the strongest player and terminates a quarter of its games. Its median
+  game is four times GREEDY's. Win rates exclude undecided games by construction, so a sweep at this scale
+  would report a number computed from the 65-74% of games that finished -- a biased subset chosen by the
+  very defect under investigation. The live `delta`-vs-`k` sweep therefore was NOT recorded, because
+  recording a headline number from a biased denominator would be worse than recording nothing.
+
+  NOT ESTABLISHED, and worth stating as a hypothesis rather than a cause: the evaluation's card-count term
+  reads `cards_opponent - cards_player`, and its deck-exhausted term inverts at `deck_len == 0` to
+  `cards_player - cards_opponent`. A policy that hoards while the pile is empty can cycle indefinitely, and
+  both terms reward hoarding at that boundary. Whether that is the mechanism is unverified; the alternative is
+  that the depth-1 leaf systematically prefers taking over progressing. Distinguishing them is the next task.
+  This must be settled before any win rate is published, and it bears on whether depth 1 can be kept at all.
