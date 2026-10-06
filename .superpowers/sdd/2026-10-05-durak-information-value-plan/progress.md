@@ -566,3 +566,63 @@ Task 12: FIX DIRECTION, not taken here because it changes spec 5.4 and needs a d
   RECOMMENDATION: (1). It is a correction, not a new parameter, it is local to the one module that knows
   what happened in the ply, and it leaves the five published weights and the sweep grid meaning what they
   say. It must be decided before any win rate is measured.
+
+Task 12: TRANSFER-NEUTRALITY CORRECTION IMPLEMENTED, AND IT DID NOT FIX THE NON-TERMINATION. Recording the
+  negative result because the earlier diagnosis was wrong and the correction is still worth keeping.
+
+  WHAT WAS CHANGED (`durak/leaf.py`). A transfer is now scored as if the card had never changed hands.
+  `_table_stats` accumulates the (count, trumps, high) stats of the cards on the table at the moment of
+  a TAKE, split by original owner (`moved_p`, `moved_o`), and `_finish` credits them back to the player
+  they came from before any term reads the stats. All three hand-reading terms are corrected together on
+  purpose: correcting only the count leaves the trump term swinging the other way. A card reaching the
+  discard is not in the moved set and keeps its credit -- that asymmetry is the whole point.
+
+  MEASURED, on a fixture where the defender may legally either take or beat the same attack:
+    term      take       discard   diff
+    count     -1.0000    +0.0000   +1.0000
+    trump     -2.0000    +0.0000   +2.0000
+    high      +0.5000    +0.5000    0.0000
+    role      -0.3000    +0.3000   +0.6000
+    all       -2.8000    +0.8000   +3.6000
+  Before the correction the count term read +3.0 for the take -- the attacker's shed card was being
+  credited to the defender as progress. It now reads -1.0. Verified legal: `legal_actions` confirms both
+  replies, and the beater is genuinely in the defender's hand.
+
+  THE CORRECTION IS REAL AND IT IS NOT THE CAUSE. Capped games, 60 per arm, before vs after:
+    informed  16/60 -> 16/60      uniform  21/60 -> 21/60
+  Unchanged. So "a transfer reads as progress" was a true defect in the evaluation but not the cause of
+  the non-termination. It stays fixed because it is wrong independently, and it is recorded here so the
+  next attempt does not re-litigate it.
+
+  THE ACTUAL CAUSE, and the earlier diagnosis was wrong about it. My traced "deck never consumed at 23,
+  hands frozen at 6/7" was a real observation of round 100-1600 of ONE game, and I over-generalised it to
+  the whole capped population. Measured over all 16 capped games at the moment they hit the cap:
+    game   rounds  deck  hands  discard
+      4   10000     0    3/1      32
+      6   10000     0    4/2      30
+      9   10000     0    5/1      30
+     12   10000     0    3/1      32
+     17   10000     0    5/3      28
+     20   10000     0    7/1      28
+  The draw pile is EMPTY, the discard holds 26-32 cards, and the hands are down to 1-7 cards. These games
+  are not frozen near the start; they run deep into the endgame and then stall. The "deck 23, hands 6/7"
+  loop I traced is what a late game looks like once the pile is gone and only transfers remain -- the
+  pile cannot be consumed because every round is a take, and the hands cannot shrink because the defender
+  is at or above HAND_TARGET so the refill draws nothing ("never discard down").
+
+  WHY A LATE DEADLOCK IS UNREACHABLE AT DEPTH 1. Probed a live stalled position: trump suit 3, the
+  attacker's hand holds 7 cards and 5 of them are beaten by nothing in the opponent's hand -- including
+  its trump, because the opponent holds no higher trump. So the reply is forced TAKE, every round. An
+  attack that cannot be beaten can only ever be followed by a take; the attacker's hand therefore never
+  shrinks below the target, the pile is never drawn, and no card ever reaches the discard. The position is
+  a genuine stalemate under these rules, and the rules have no repetition or draw-detect to escape it.
+
+  Depth 1 cannot see this. The leaf scores the position after one ply; the stalemate only exists across
+  many rounds of forced takes. The evaluation has no term for "this line makes no progress", and adding
+  one would be a new parameter for something a repetition rule, not a better number, should detect.
+
+  DIRECTION THIS POINTS TO, for a decision rather than for silent action: the correct fix is a REPETITION
+  OR STALEMATE DETECTOR in the engine, treating a position visited N times as a draw, not a 10,000-round
+  cap. That is a rules change (a new terminal outcome) and needs the user's call. The alternative is
+  depth 2+, which is expensive and still does not detect repetition -- it only makes the search avoid
+  some stalemates by accident.
