@@ -261,3 +261,26 @@ Resolution priority is the project owner's call, not the implementer's.
   that mattered. The constraint was already known and written down from Stage 10: an njit entry point cannot
   construct a `GameState`. Asking "where should the buffers live" was the wrong question; "the search needs
   `GameState` **objects**" was the right one, and it rules out every allocation-location answer.
+
+- **Stage 11 (all options blocked)** — the `GameState` construction limit, final form. An njit function
+  reached from Python that constructs a `GameState` raises
+  `TypeError: invalid number of args: expected 8, got 7`. Ruled out by direct test: a state argument (fails
+  with zero, one, or two), helper indirection, which frame constructs, `cache=True` vs `False`, and
+  parameter annotations.
+
+  **`rules.deal_state` constructs a `GameState`, is annotated, is `cache=True`, is reached from Python via
+  `setup_game`, and works.** That contradiction is the entire remaining problem: one structural difference
+  separates it from functions that fail, and it has not been identified. Options (a), (a'), (b) and (c) are
+  all blocked on finding it, not merely unattempted.
+
+  Leading candidate: `deal_state` calls other `@njit` helpers **in the same module**, and every failing
+  helper imports `HAND_CAPACITY` and `EMPTY` and constructs alone. Moving one failing constructor into
+  `durak/rules.py` beside `deal_state`, unchanged otherwise, is a ten-minute test that would reopen two
+  options at once.
+
+- **Stage 11 (process, and the expensive lesson)** — four options were designed, one was chosen, two more
+  were ruled out by tests, and the option that was chosen *first* failed for a reason that was already
+  written down in the ledger from the stage before. The question "where should the buffers live" was never
+  the right question; "the search needs `GameState` **objects** that cannot be created" is, and it was
+  answerable from Stage 10's own notes without a single new experiment. When a constraint is already
+  recorded, read it before designing around it.

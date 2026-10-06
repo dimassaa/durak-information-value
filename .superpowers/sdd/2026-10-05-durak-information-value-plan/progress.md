@@ -348,3 +348,43 @@ Task 11: REMAINING OPTIONS, corrected:
   experiment's central claim structurally true: the two arms become one code path that receives a different
   hand source, which is exactly what the project claims to measure.
   NEEDS FROM USER: confirmation of (c), or a preference for (b) if the policy signature must stay pinned.
+
+Task 11: OPTION (c) ALSO FAILS, and the constraint is now sharper than any statement recorded so far. Tree green at 296 passed; no code committed.
+
+Task 11: FULL NEGATIVE RESULT. An njit function reached from Python that constructs a `GameState` raises
+  `TypeError: invalid number of args: expected 8, got 7`.
+  RULED OUT as the cause, each by direct test:
+    - a state argument       Fails with one state arg, with two, and with none at all.
+    - helper indirection     `_fresh_scratch(deck_size)` called from a state-holding frame: fails.
+    - which frame constructs A no-state frame that allocates and passes the buffers down to a
+                            state-holding frame: fails. This was option (c)'s load-bearing assumption.
+    - cache=True vs False    Both fail. (`deal_state` is `@njit(cache=True)` at rules.py:315, so the
+                            earlier reading of it as `cache=False` was wrong.)
+    - parameter annotations  Annotated and unannotated both fail.
+  Option (a) additionally fails for a separate, independent reason already recorded: flattened spare
+  fields are not `GameState` objects, and the search's callees require objects.
+
+Task 11: THE UNEXPLAINED ANOMALY, and it is the whole remaining problem. `rules.deal_state` constructs a
+  GameState, is annotated, is `cache=True`, is reached from Python through `setup_game`, and WORKS. It has
+  the same shape as functions that fail. So at least one structural difference remains unidentified, and
+  until it is, all four options (a, a', b, c) are blocked rather than merely unattempted.
+  SPECIFIC NEXT STEP, in order of likelihood:
+    1. Same-module inlining. `deal_state` calls `shuffle_inplace_with_state`, `assign_first_attacker` and
+       the refill helpers, all `@njit` in `rules.py` itself. Every failing helper I wrote imports
+       `HAND_CAPACITY` and `EMPTY` from `durak.rules` and constructs alone. Numba's inlining of a
+       same-module compiled helper is the leading candidate for why the jitclass return type resolves
+       correctly there. Test: move one failing constructor into `durak/rules.py` next to `deal_state`,
+       with everything else identical.
+    2. The dynamic-globals path. `pyproject.toml` already records that Numba cannot cache functions using
+       "ctypes pointers and large global arrays", and every state-touching function lives with that
+       warning. If constructing resolves through a different path depending on which globals are in scope,
+       a constructor that mirrors `deal_state`'s global usage exactly would work.
+    3. Bisect `deal_state` itself: delete its body down to a bare constructor, add one call back at a time.
+  Option 1 is a ten-minute test and would reopen (a) and (c) at once.
+
+Task 11: STANDING RECOMMENDATION, unchanged. If no difference is found and the construction limit holds as
+  stated, the honest resolution is that the search must not need a second `GameState` at all: restructure
+  `evaluate` to take scalars (it already only reads hand sizes, trump counts, high counts, role and
+  deck-empty) *and* replace `apply_action`/`legal_actions` on the hypothesis with the small set of
+  transitions the search needs. That is a larger design change than the plan's Task 11 and needs its own
+  approval; it should not be started as a workaround.
