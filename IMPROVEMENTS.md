@@ -97,3 +97,35 @@ Resolution priority is the project owner's call, not the implementer's.
   The spec's rule section should state that the first attacker is overridable for experimental
   control, since it is now part of the rules surface and someone reading only the spec would not
   know it exists.
+
+- **Stage 09** — a single-seed tolerance test on a Monte-Carlo quantity can pass against a real bug.
+  `test_the_empirical_marginal_matches_the_analytic_uniform_prior` asserted each card's marginal
+  against `m/U` within 0.02 at one RNG seed, and **passed** while the prior carried a real bias
+  (per-card std 0.058 against a multinomial 0.0025). At that seed the largest deviation happened to
+  land inside the band. The rewrite asserts the *signature* — across-card spread and the entropy
+  deficit — over several seeds. The general rule: assert a seed-stable statistical signature, not a
+  per-draw tolerance, and prefer a quantity that separates signal from noise by orders of magnitude.
+
+- **Stage 09** — particle depletion means `particle_count` is a diversity budget, not a sample size.
+  Systematic resampling duplicates survivors instead of re-drawing, so after two reveals ~480
+  distinct hypotheses carry 20,000 particles and the resampled counts land on a lattice of 179. The
+  filter is correct there, but posterior spread is not a standard error and must not be presented as
+  one. Any report quoting uncertainty from the particle filter needs a diversity diagnostic —
+  distinct-hypothesis count per step — alongside it, and none exists yet.
+
+- **Stage 09** — `informativeness` is the entropy of the *normalised* marginal, which measures how
+  many bits remain to identify the unseen set and is **blind to asymmetry**: a filter that knows the
+  hand exactly scores the same as one that knows nothing. Report 1 uses this as the phase curve's
+  input, so the curve must be read against round index and cards-left as well, and the report should
+  say so on its face rather than in a footnote.
+
+- **Stage 09** — spec 5.2 specifies `apply_observation(particles, state, observation, settings)`.
+  Implemented as `(particles, observation, soft_penalty_lambda)`, because no Python object crosses
+  into `nopython` and `state` is only needed when drawing the prior. The spec's telemetry and
+  interface tables should be corrected to match, so a later reader does not "fix" it back.
+
+- **Stage 09** — the size constraint admits exactly one branch per observation, which means the
+  filter cannot be walked into an exact hand; it can only start there. `particle_count` sweeps (a
+  planned sweep, `durak/config.py:particle_count`) should measure *diversity* at each step, not just
+  the accuracy of the final marginal, or they will report that larger k helps without capturing why
+  it stops helping.
