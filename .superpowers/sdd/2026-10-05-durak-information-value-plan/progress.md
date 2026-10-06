@@ -291,3 +291,22 @@ Task 11: CANDIDATE SOLUTIONS, all of which change a boundary, so none is taken w
   RECOMMENDATION: (a). It is the smallest change, it is thread-safe by construction rather than by care,
   and it keeps the pinned signature. It needs one decision from the user: whether scratch buffers belong
   inside `GameState`.
+
+CROSS-MODE GATE: PASSED again, on the Task 10 tree. `NUMBA_DISABLE_JIT=1 pytest` -> 296 passed in 1684.31s (28:04), 761 warnings (all the intended uint64 wraparound). durak/rules.py changed since the previous gate, so this was required. Task 14's precondition is met.
+
+USER DECISIONS:
+  (1) Scratch location: INSIDE `GameState`. Chosen over extending the policy signature and over the scalar-leaf restructure. Rationale recorded: no construction anywhere on the policy path, and thread-safe by construction under `prange` because each thread plays a different game and therefore holds a different state.
+  (2) Depth-1 over-attack: LEAVE AS IS, decide in Task 12. The limitation stays pinned by `test_throwing_dominates_stopping_at_depth_one` and recorded in IMPROVEMENTS. Task 12 is the first place it shows up in win rates, and whichever way it is resolved the choice goes into the manifest.
+
+Task 11: DESIGN CONSEQUENCE worth recording, found while implementing (1). Two spare states suffice, not three, because the candidate action can be re-applied per particle rather than once per candidate:
+    for candidate:
+      for particle:
+        copy(state -> spare_a); apply(candidate) in spare_a      # "after", rebuilt per particle
+        copy(spare_a -> spare_b); substitute(particle hand) in spare_b   # "hypothesis"
+        for reply:
+          copy(spare_b -> spare_a); apply(reply) in spare_a       # spare_a reused as the leaf
+          total += evaluate(spare_a, player)
+  `spare_a` is reused as the reply buffer because it is already dead by then. The cost is one extra
+  `apply_action` plus one extra copy per *particle* instead of per candidate, while the expensive part
+  (k particles x replies x evaluate) is unchanged. That turns three spares into two, which halves the
+  fields added to `GameState` and keeps the caller's `state` strictly read-only.
