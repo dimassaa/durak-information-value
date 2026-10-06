@@ -388,3 +388,44 @@ Task 11: STANDING RECOMMENDATION, unchanged. If no difference is found and the c
   deck-empty) *and* replace `apply_action`/`legal_actions` on the hypothesis with the small set of
   transitions the search needs. That is a larger design change than the plan's Task 11 and needs its own
   approval; it should not be started as a workaround.
+
+Task 11: APPROACH CHANGED, and the four blocked options are abandoned rather than revisited. 296 passed, 1 skipped.
+
+Task 11: THE FRAMING ERROR, stated plainly because it cost three stages. I asked "where should the search's
+  working buffers live" and then "how should they be allocated". Neither question was answerable, because
+  the premise was false: the search does not need a second `GameState`, it needs the *arithmetic* one
+  would have supplied. Every one of options (a), (a'), (b) and (c) was a way of getting memory the search
+  did not actually need. The question that mattered -- "what does the leaf actually read?" -- was
+  answerable from Stage 10's own notes, with no new experiment.
+
+Task 11: WHAT THE LEAF ACTUALLY READS. `evaluate` reads five things: each hand's size, trump count and
+  high-card count; the attacker; and whether the draw pile is empty. All of that is arithmetic over two
+  card arrays. `legal_actions` is not needed on the defender's side either -- their replies are "which cards
+  beat the pending attack", computable from their hand, the table and the trump. So the search stops
+  calling `apply_action` and `legal_actions` on derived positions entirely, and the construction problem
+  disappears with the requirement that caused it. The registry's pinned signature survives untouched.
+
+Task 11: COMMITTED. `tests/test_leaf.py` -- the differential harness, written first and skipped because
+  `durak/leaf` does not exist yet. It plays the same transitions through `rules.apply_action` and through
+  pure arithmetic and demands identical profiles, which is the only thing that makes a hand-written
+  reimplementation of the rules trustworthy. It also checks the replacement reply enumeration against
+  `rules.legal_actions` on 200 random positions, since missing a beater would make the opponent look
+  weaker than the rules allow.
+
+Task 11: FIRST RESULT OF THE DIFFERENTIAL TEST: it caught a discrepancy immediately (2.3 vs 0.7 on an
+  attack-then-beat position), which is exactly what it was written for. The implementation was not finished,
+  so it was removed rather than committed half-written; the test carries the rules extraction in its
+  docstring so the next attempt does not re-derive it.
+
+Task 11: RULES, extracted from durak/rules.py and easy to get backwards:
+  - ATTACK/THROW: card leaves the attacker's hand for the table; an empty hand ends the game BEFORE the
+    defender responds and before any refill.
+  - BEAT: card leaves the defender's hand for the table; an empty hand ends the game there and then.
+  - TAKE: the defender picks up every table ATTACK then every table DEFENSE, in that order; table clears.
+  - STOP: every table card goes to the DISCARD; table clears; neither hand grows.
+  - Both TAKE and STOP end the round, refill, and leave `attacker = 1 - attacker`. They differ ONLY in
+    which hand grew. Refill order is PREVIOUS attacker first, then the other, each drawing `deck[0]`
+    while under `HAND_TARGET` and the pile is non-empty; "never discard down" is load-bearing, since a
+    player holding twelve cards draws nothing. A finished game is never refilled.
+  - `wait`: BEAT does NOT trigger a refill (it does not end the round), and neither does ATTACK/THROW.
+    Only TAKE and STOP refill. Getting that wrong double-counts the deck.
