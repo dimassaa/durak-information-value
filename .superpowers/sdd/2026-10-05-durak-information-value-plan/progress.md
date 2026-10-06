@@ -686,3 +686,41 @@ Task 12: ROOT CAUSE FOUND, AND IT WAS A RULES BUG, NOT A SEARCH OR EVALUATION DE
     * ENGINE_VERSION 1 -> 2, RULES_VERSION 1 -> 2, so no pre-fix dataset can be pooled with a post-fix one.
 
   SUITE: 320 passed compiled. The interpreted cross-mode gate is running.
+
+Task 12: THE HEADLINE NUMBER, first measurement on corrected rules. 36-card deck, both arms against
+  RANDOM, same seed, `weight_sweep` so the two rates come from one code path.
+
+    games   uniform   informed   delta
+      100     0.5825      0.5950  +0.0125
+     1000     0.5543      0.5877  +0.0335
+     2000     0.5573      0.5870  +0.0297
+
+  `delta` holds between 1000 and 2000 games at about +0.030: perfect knowledge of the opponent's hand is
+  worth roughly three percentage points against a random opponent. This is a FIRST measurement, not a
+  published figure, and it is only defensible together with its caveats below.
+
+  Caveat that must travel with the number: the delta is measured at a fixed particle count of 100, and the
+  uninformed arm's strength at that count is unknown, because `k` cannot be varied (see below). A stronger
+  approximation of the opponent's hand would narrow the gap, so +0.030 is an estimate against THIS
+  baseline and not against an idealised one.
+
+Task 12: `k` IS NOT A KNOB, and the sweep that looked like it proved the opposite.
+  `Settings.particle_count` reached nothing. `policy_search` read the module constant
+  `search_policy.PARTICLE_COUNT = 100`, baked into the compiled call. Measured: `k = 25 / 100 / 400` gave
+  win rate `0.65 / 0.65 / 0.65` -- identical because the parameter had no effect, not because the
+  measurement was stable. A table of constant rows reads exactly like a robustness result, which is why it
+  survived several stages unexamined.
+
+  RESOLVED as chosen: the field stays, because the manifest must record it (plan Task 9 requires it, and it
+  is part of the reproducibility contract), but it is now honest about what it is. `Settings.__post_init__`
+  refuses any value that disagrees with `PARTICLE_COUNT`, so a caller who widens the sweep gets an error
+  instead of duplicated rows. `DEFAULT_K_VALUES` is `(100,)` and the docstring states the open question.
+  Making the field authoritative means threading an int through `choose_action` -- an njit if/elif chain
+  called from a `prange` loop -- and from there through `policy_search` and all eight policy signatures.
+  That is a real change and stays an open task.
+
+  OPEN QUESTION, recorded rather than answered: is `delta` stable across `k`? Unmeasured. No claim either
+  way may appear in the report.
+
+Task 12: cross-mode gate. 320 passed with `NUMBA_DISABLE_JIT=1`. One earlier run passed but had been
+  started before the config edits landed, so it was not evidence for the current tree; it was re-run.
