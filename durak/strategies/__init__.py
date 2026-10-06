@@ -13,9 +13,9 @@ objects -- the tournament runs its games inside a Numba ``prange`` loop where ne
 supported, and a policy carrying hidden state would make a seeded run irreproducible.
 
 Implemented now: the two throwaway auto drivers, which exist so the engine can generate games
-before the real policies exist, plus ``RANDOM`` and ``GREEDY``. ``CONSERVATIVE``,
-``SEARCH_UNIFORM``, ``SEARCH_INFORMED``, and ``CHEATER_DOC`` are reserved ids that
-``get_policy`` refuses rather than stubs.
+before the real policies exist, ``RANDOM``, ``GREEDY``, and the two search arms.
+``CONSERVATIVE`` and ``CHEATER_DOC`` remain reserved ids that ``get_policy`` refuses rather
+than stubs.
 """
 
 from durak.strategies.base import InfoMode, Policy, StrategyId
@@ -26,6 +26,7 @@ from durak.strategies.policies import (
     policy_random,
 )
 from durak.strategies.registry import get_policy, policy_names, registered_ids
+from durak.strategies.search_policy import policy_search
 
 # The pinned spellings, re-exported so callers write `from durak.strategies import GREEDY`
 # rather than reaching through two modules for an enum member.
@@ -33,16 +34,21 @@ AUTO_ATTACK = int(StrategyId.AUTO_ATTACK)
 AUTO_DEFEND = int(StrategyId.AUTO_DEFEND)
 RANDOM = int(StrategyId.RANDOM)
 GREEDY = int(StrategyId.GREEDY)
+SEARCH_UNIFORM = int(StrategyId.SEARCH_UNIFORM)
+SEARCH_INFORMED = int(StrategyId.SEARCH_INFORMED)
 
 __all__ = [
     "AUTO_ATTACK",
     "AUTO_DEFEND",
     "GREEDY",
     "RANDOM",
+    "SEARCH_INFORMED",
+    "SEARCH_UNIFORM",
     "InfoMode",
     "Policy",
     "StrategyId",
     "get_policy",
+    "policy_search",
     "policy_auto_attack",
     "policy_auto_defend",
     "policy_greedy",

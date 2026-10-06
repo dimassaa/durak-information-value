@@ -21,6 +21,7 @@ from durak.strategies.policies import (
     policy_greedy,
     policy_random,
 )
+from durak.strategies.search_policy import policy_search
 
 # Keyed by the pinned integer, not the enum member, so the dispatch inside compiled code is a
 # plain integer switch. The enum stays the readable spelling.
@@ -29,6 +30,10 @@ _POLICIES = {
     int(StrategyId.AUTO_DEFEND): policy_auto_defend,
     int(StrategyId.RANDOM): policy_random,
     int(StrategyId.GREEDY): policy_greedy,
+    # Both search arms are the *same* function. `InfoMode` is the only input that differs between them,
+    # which is what makes their win-rate difference attributable to information and to nothing else.
+    int(StrategyId.SEARCH_UNIFORM): policy_search,
+    int(StrategyId.SEARCH_INFORMED): policy_search,
 }
 
 _NAMES = {

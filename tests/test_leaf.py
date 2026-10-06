@@ -40,7 +40,6 @@ import pytest
 # The implementation is not written yet. The test is committed first and skipped rather than deleted,
 # because a differential test against the engine is the part that must not be re-derived from memory.
 # A skipped test here means "the leaf transition is unimplemented", not "the leaf transition is correct".
-pytest.importorskip("durak.leaf", reason="durak.leaf is not implemented yet")
 
 from durak.leaf import leaf_profile_after, reply_cards
 
@@ -74,56 +73,70 @@ def profile(state, player):
 
 
 def test_the_leaf_transition_matches_the_engine_for_an_attack_and_a_beat():
-    """ATTACK then BEAT: one card each leaves a hand, the table holds both, nothing is refilled."""
-    state = legal_state([card_at(6, 1), card_at(0, 1), card_at(5, 1)],
-                        [card_at(4, 2), card_at(3, 2), card_at(6, 0)], trump=3, attacker=0)
-    attack = card_at(0, 1)
-
-    for reply in [c for c in range(36)
-                  if rules.beats(c, attack, state.trump)
-                  and c in {int(x) for x in state.hands[1, :state.hand_sizes[1]]}]:
-        after = rules.apply_action(state, pack_action(THROW, attack), T)
+    """ATTACK then BEAT: one card each leaves a hand, the table holds both, and neither refills."""
+    for reply in _beaters(card_at(0, 1), trump=3):
+        state, pristine = _twin_states()
+        after = rules.apply_action(state, pack_action(THROW, card_at(0, 1)), T)
         after = rules.apply_action(after, pack_action(BEAT, reply), T)
 
-        mine, theirs = _hypothesised_hands(state, after)
-        assert leaf_profile_after(state, 0, THROW, attack, BEAT, reply, mine, theirs, W) == \
+        mine, theirs = _hypothesised_hands(pristine)
+        assert leaf_profile_after(pristine, 0, THROW, card_at(0, 1), BEAT, reply, mine, theirs, W) == \
             pytest.approx(_evaluate_profile(profile(after, 0)), abs=1e-9), (
             f"the leaf disagrees with the engine after a beat by {reply}"
         )
 
 
 def test_the_leaf_transition_matches_the_engine_for_an_attack_and_a_take():
-    """TAKE: the defender picks up the table and becomes the attacker, then both refill."""
-    state = legal_state([card_at(6, 1), card_at(0, 1), card_at(5, 1)],
-                        [card_at(4, 2), card_at(3, 2)], trump=3, attacker=0)
+    """TAKE: the defender picks up the table, becomes the attacker, and both refill."""
+    state, pristine = _twin_states()
 
     after = rules.apply_action(state, pack_action(THROW, card_at(0, 1)), T)
     after = rules.apply_action(after, pack_action(TAKE, 0), T)
 
-    mine, theirs = _hypothesised_hands(state, after)
-    assert leaf_profile_after(state, 0, THROW, card_at(0, 1), TAKE, 0, mine, theirs, W) == \
+    mine, theirs = _hypothesised_hands(pristine)
+    assert leaf_profile_after(pristine, 0, THROW, card_at(0, 1), TAKE, 0, mine, theirs, W) == \
         pytest.approx(_evaluate_profile(profile(after, 0)), abs=1e-9)
 
 
 def test_the_leaf_transition_matches_the_engine_for_stop():
-    """STOP discards the table and swaps the roles -- the opposite of TAKE on both counts."""
-    state = legal_state([card_at(6, 1), card_at(0, 1), card_at(5, 1)],
-                        [card_at(4, 2), card_at(3, 2), card_at(7, 2)], trump=3, attacker=0,
-                        table_attacks=[card_at(2, 1)], table_defenses=[card_at(3, 0)])
+    """STOP discards the table and swaps the roles -- the opposite of TAKE on which hand grows."""
+    state, pristine = _twin_states(table=True)
 
     after = rules.apply_action(state, pack_action(STOP, 0), T)
 
-    mine, theirs = _hypothesised_hands(state, after)
-    assert leaf_profile_after(state, 0, STOP, 0, STOP, 0, mine, theirs, W) == \
+    mine, theirs = _hypothesised_hands(pristine)
+    assert leaf_profile_after(pristine, 0, STOP, 0, STOP, 0, mine, theirs, W) == \
         pytest.approx(_evaluate_profile(profile(after, 0)), abs=1e-9)
 
 
-def _hypothesised_hands(state, after):
-    """The hands the pure transition starts from.
+def _twin_states(table=False):
+    """Two identical states: one for the engine to mutate, one to stay pristine for the pure call.
+
+    `rules.apply_action` mutates in place, so a test that drives the engine first and then asks the
+    arithmetic about the same state is asking about a position that has already had its deck drained.
+    That was the first version of this file, and it disagreed by 1.6 on every case.
+    """
+    def build():
+        return legal_state([card_at(6, 1), card_at(0, 1), card_at(5, 1)],
+                           [card_at(4, 2), card_at(3, 2)], trump=3, attacker=0,
+                           table_attacks=[card_at(2, 1)] if table else [],
+                           table_defenses=[card_at(3, 0)] if table else [])
+
+    return build(), build()
+
+
+def _beaters(target, trump):
+    """Cards in the second fixture hand that beat `target`."""
+    return [c for c in (card_at(4, 2), card_at(3, 2))
+            if rules.beats(c, target, trump)]
+
+
+def _hypothesised_hands(state):
+    """The two hand arrays the pure transition starts from.
 
     The search knows only its own hand and a hypothesis about the opponent's, so the differential test
-    has to feed it the *same* two arrays the engine started from -- not the engine's result, which would
-    make the comparison vacuous.
+    must feed it the arrays the engine started from -- not the engine's result, which would make the
+    comparison vacuous.
     """
     mine = np.full(rules.HAND_CAPACITY, rules.EMPTY, dtype=np.int16)
     for i in range(int(state.hand_sizes[0])):
@@ -154,19 +167,29 @@ def test_reply_enumeration_equals_the_rules_on_random_positions():
     that matters: it makes the opponent look weaker than the rules allow, which flatters the search.
     """
     checked = 0
-    for seed in range(200):
+    # 400 seeds, not 200: roughly 40% of uniformly random positions have an unanswered attack at some
+    # point, and the enumeration is worth checking on as many as the cheap scan can find.
+    for seed in range(400):
         state = random_position(deck_size=36, seed=seed, max_actions=2 + seed % 25)
+        # A finished game has no legal actions at all, so `legal_actions` returns empty while the cards
+        # that *would* beat still beat. Comparing them would report a difference that is not one.
+        if state.winner != rules.EMPTY:
+            continue
         if state.table_attack_count <= state.table_defense_count:
             continue
         target = int(state.table_attacks[state.table_defense_count])
+        # The defender is whoever is *not* attacking. Hard-coding seat 1 asks the attacker for their legal
+        # actions instead, which on an unmatched table is an empty set -- a difference that looks like a
+        # bug in the enumeration and is not.
+        defender = 1 - int(state.attacker)
 
-        legal = {action_card(int(a)) for a in rules.legal_actions(state, 1)
+        legal = {action_card(int(a)) for a in rules.legal_actions(state, defender)
                  if action_kind(int(a)) == BEAT}
-        pure = set(reply_cards(state, 1, target).tolist())
+        pure = set(reply_cards(state, defender, target).tolist())
         checked += 1
 
         assert pure == legal, (
             f"seed {seed}: the pure enumeration disagrees on the replies to card {target}"
         )
 
-    assert checked > 100, f"only {checked} of 200 positions had an unanswered attack"
+    assert checked > 100, f"only {checked} of 400 positions had an unanswered attack"

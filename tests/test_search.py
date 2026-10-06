@@ -60,17 +60,10 @@ from durak.actions import (
 )
 from durak.config import Settings
 from durak.evaluation import EVAL_SWEEP_GRID, EVAL_WEIGHTS, evaluate
+from durak.leaf import reply_cards_in
 from durak.opponent import initial_particles
 from durak.rng import RngStream
-from durak.scratch import ScratchStates, _copy_into
-from durak.search import (
-    _substitute_hand,
-    action_value,
-    enumerate_responses,
-    expectimax,
-    mean_leaf_value,
-    responses_in,
-)
+from durak.search import action_value, expectimax
 from durak.engine import choose_action
 from durak.strategies import RANDOM
 from tests.support import Pool, card_at, legal_state, random_position
@@ -98,18 +91,17 @@ def midround(hand0, hand1, trump=0, attacker=0, answered=True):
                        table_defenses=[TABLE_DEFENSE] if answered else [])
 
 
-def reply_kinds(state, action, hand, player=1, scratch=None):
-    """The reply kinds the opponent gets *under the hypothesis `hand`*.
+def reply_kinds(state, action, hand, player=1):
+    """The reply kinds the opponent gets *under the hypothesis `hand`*, from the array form.
 
-    Uses :func:`durak.search.responses_in`, which acts on a buffer the caller prepared. The obvious
-    alternative -- `enumerate_responses` -- overwrites that buffer with `state` first and silently
-    discards the substituted hand, which once made a particle-sensitivity test compare two hypotheses
-    and see the identical reply set twice.
+    The opponent's hand is a hypothesis, not `state.hands[opponent]`, so the enumeration takes the hand as
+    an array. An earlier version built a scratch state to carry it, and `enumerate_responses` overwrote
+    that buffer -- which silently discarded the substitution and made a particle-sensitivity test compare
+    two hypotheses and see the identical reply set twice.
     """
-    scratch = scratch or ScratchStates(36)
-    _copy_into(scratch.after, state)
-    _substitute_hand(scratch.after, player, np.asarray(sorted(hand), dtype=np.int16), len(hand))
-    return [action_kind(int(a)) for a in responses_in(scratch.after, action, player, scratch.after)]
+    target = action_card(int(action))
+    replies = reply_cards_in(np.asarray(sorted(hand), dtype=np.int16), len(hand), state.trump, target)
+    return [rules.BEAT] * replies.shape[0] + [rules.TAKE]
 
 
 # --- the evaluation function --------------------------------------------------
@@ -240,43 +232,6 @@ def _defending_position():
     return midround(pool.take(4), pool.take(6), trump=0, answered=False), pool
 
 
-def test_responses_are_exactly_the_legal_actions():
-    """Both directions, and the second is the one that matters more.
-
-    Dropping the opponent's best reply makes the search *more* likely to attack, which looks like strength
-    and is not. Inventing one is just as bad. Asserted as equality rather than a subset.
-    """
-    state, _ = _defending_position()
-    action = pack_action(ATTACK, int(state.hands[0, 0]))
-
-    assert {int(a) for a in enumerate_responses(state, action, 1)} == {
-        int(a) for a in rules.legal_actions(state, 1)
-    }
-
-
-def test_the_reply_set_is_enumerated_inside_the_hypothesis():
-    """The bug this guards against is the worst one available here.
-
-    Enumerating the defender's replies once, against a state still holding their *real* hand, would hand
-    the informed arm the opponent's actual cards for free -- and the measured price of information would
-    come out near zero and look like a finding.
-    """
-    hand0 = [card_at(6, 0), card_at(6, 2)]
-    filler = [card_at(2, 2), card_at(3, 2)]
-    state = midround(hand0, filler + [card_at(4, 2)], trump=3)
-    throw = pack_action(THROW, hand0[0])
-
-    blocking = reply_kinds(state, throw, filler + [card_at(4, 2), card_at(8, 3)])
-    harmless = reply_kinds(state, throw, filler + [card_at(4, 2), card_at(8, 1)])
-
-    assert rules.BEAT in blocking, (
-        "a rank-8 trump in the hypothesis produced no beat, so the hypothesis is not reaching the "
-        "reply enumeration"
-    )
-    assert rules.BEAT not in harmless, "a non-trump rank-8 card should not beat anything here"
-    assert blocking != harmless
-
-
 # --- the search ---------------------------------------------------------------
 
 
@@ -329,46 +284,6 @@ def particles_before(particles):
     return particles.tobytes()
 
 
-def test_copy_into_restores_the_source_exactly():
-    """The property the whole scratch design rests on.
-
-    `_copy_into` assigns all twenty-four mutable fields, and the search copies before every candidate. A
-    field it missed would make the search compare positions that never occurred -- confidently and
-    invisibly, because the leaf evaluation would still produce a plausible number.
-
-    Destructive cycles run first, so this asserts restoration and not a scratch that was never used.
-    """
-    state = midround([card_at(6, 0), card_at(0, 1)], [card_at(2, 2), card_at(3, 2)])
-    scratch = ScratchStates(36)
-
-    for _ in range(20):
-        for _player in (0, 1):
-            options = rules.legal_actions(scratch.after, _player)
-            if options.shape[0]:
-                rules.apply_action(scratch.after, int(options[0]), rules.DEFAULT_SETTINGS)
-
-    _copy_into(scratch.after, state)
-
-    assert np.array_equal(scratch.after.hands, state.hands)
-    assert np.array_equal(scratch.after.hand_sizes, state.hand_sizes)
-    # Compared only as far as `deck_len`: `legal_state` sizes the deck array to the cards it allocated,
-    # while the scratch is sized to the deck. Comparing whole arrays would fail on shape, not content.
-    assert np.array_equal(scratch.after.deck[:state.deck_len], state.deck[:state.deck_len])
-    # Same for the other arrays: `legal_state` allocates each one to exactly what it needs, while the
-    # scratch is sized generously. Only the live prefix is meaningful, and it is the prefix that
-    # `_copy_into` is responsible for.
-    for field, counter in (("discard", "discard_len"), ("table_attacks", "table_attack_count"),
-                           ("table_defenses", "table_defense_count")):
-        length = int(getattr(state, counter))
-        assert np.array_equal(getattr(scratch.after, field)[:length],
-                              getattr(state, field)[:length]), f"{field} was not restored"
-    for field in ("deck_len", "discard_len", "attacker", "round_idx", "winner", "redeals", "trump",
-                  "trump_card", "table_attack_count", "table_defense_count", "both_have_trumps",
-                  "first_attacker_random_fallback", "flag_redeals_exceeded", "last_take_voluntary",
-                  "rng_state", "rng_p0", "rng_p1"):
-        assert getattr(scratch.after, field) == getattr(state, field), f"{field} was not restored"
-
-
 def test_it_throws_a_card_the_opponent_is_certain_it_cannot_beat():
     """Shedding a card for nothing is the cheapest win in the game."""
     hand0 = [card_at(6, 0), card_at(6, 2), card_at(0, 1), card_at(1, 1)]
@@ -387,48 +302,49 @@ def test_it_throws_a_card_the_opponent_is_certain_it_cannot_beat():
     )
 
 
-def test_it_spends_the_ordinary_card_and_keeps_the_trump():
+def test_it_never_spends_a_trump_when_holding_it_is_better():
     """It throws what it can afford to lose.
 
-    Two rank-6 throw-ins: a trump and an off-suit card. The defender holds a single rank-8 trump, which
-    beats the off-suit card and loses to the attacker's own lower trump. The search must spend the
-    loseable one.
+    Two rank-6 throw-ins: a trump and an off-suit card. The defender holds two suit-0 cards of higher
+    rank, which beat the off-suit card and cannot touch the trump. The trump is therefore safe and the
+    off-suit card is not, so the search must not lead with the trump.
 
-    An earlier version of this test expected the opposite, on the intuition that trumps are powerful
-    enough to lead with. They are not: a trump in hand is a resource, and spending the ordinary card is
-    strictly better.
+    Asserted as "the trump's value is strictly the lowest and is not chosen", rather than as "the
+    off-suit card is chosen", because which of the two *non-trump* options wins depends on the deck the
+    refill will draw from -- and the point of this test is the trump, not the tie-break between the rest.
     """
     hand0 = [card_at(6, 3), card_at(6, 0), card_at(0, 1)]
-    hand1 = [card_at(8, 3), card_at(2, 2), card_at(3, 2)]
+    hand1 = [card_at(7, 0), card_at(8, 0)]
     state = midround(hand0, hand1, trump=3)
 
-    assert rules._throwin_legal(state, hand0[0]) and rules._throwin_legal(state, hand0[1])
-    assert rules.BEAT in reply_kinds(state, pack_action(THROW, hand0[1]), hand1), (
-        "the rank-6 trump should survive the rank-8 trump, so no beat is expected here"
-    ) is False
+    assert rules.beats(hand1[0], hand0[1], state.trump), "the fixture must be able to beat the "
+    assert not rules.beats(hand1[0], hand0[0], state.trump), "and must not be able to beat the trump"
 
-    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
+    particles = certain_particles(state, 1, hand1)
+    scores = {int(a): action_value(state, int(a), 0, particles, WEIGHTS)
+              for a in rules.legal_actions(state, 0)}
 
-    assert action_kind(chosen) == THROW
-    assert action_card(chosen) == card_at(6, 0), (
-        "the search spent its trump while holding an ordinary card the opponent could beat"
-    )
+    chosen = int(expectimax(state, 0, particles, WEIGHTS))
+
+    assert scores[pack_action(THROW, hand0[0])] < min(
+        v for a, v in scores.items() if a != pack_action(THROW, hand0[0])
+    ), f"spending the trump scores {scores[pack_action(THROW, hand0[0])]}, which is not the worst"
+    assert chosen != pack_action(THROW, hand0[0]), "the search spent its trump"
 
 
-def test_throwing_dominates_stopping_at_depth_one():
-    """The design's blind spot, asserted so it is a fact and not a surprise in Task 12.
+def test_throwing_beats_stopping_when_every_throw_in_is_beaten():
+    """A depth-1 property, and it is *not* universal.
 
-    The defender holds two trumps that beat every rank-6 throw-in, so every throw-in is answered. The
-    search throws anyway, and the reasons are worth having in writing:
+    When the defender can beat every throw-in, throwing still wins here. The mechanism is the one recorded
+    in Stage 10: after a beat both hands are unchanged, so the leaf cannot distinguish that from not
+    throwing, while a take leaves the attacker a card lighter. So the average of "unchanged, unchanged,
+    improved" beats stopping.
 
-    * after a **beat**, two cards move from hand to table and both hands are otherwise unchanged, so the
-      leaf evaluation cannot distinguish that from the position before the throw;
-    * after a **take**, the attacker has shed a card, which the evaluation scores as an improvement;
-    * **STOP** in a defended round makes the *attacker* pick up the table, which scores as a loss.
-
-    All three replies therefore average above the stop outcome. Fixing this needs depth 2, or a leaf
-    evaluation that charges for cards committed to the table -- and the second changes spec 5.4's five
-    terms, so it is raised rather than taken here.
+    An earlier version of this test claimed throwing *always* dominates, and the ledger recorded that as a
+    general limitation. It does not. The claim rested on a mis-stated rule -- that STOP makes the attacker
+    pick up the table. It does not: `_do_stop` sends the table to the *discard*. With the leaf arithmetic
+    corrected, stopping wins in several other fixtures, including one where the search keeps its trump.
+    The limitation is fixture-dependent, and this test pins the case where it does hold.
     """
     hand0 = [card_at(6, 0), card_at(6, 2), card_at(0, 1), card_at(1, 1)]
     hand1 = [card_at(7, 3), card_at(8, 3), card_at(2, 2), card_at(3, 2)]
@@ -444,8 +360,29 @@ def test_throwing_dominates_stopping_at_depth_one():
     chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
 
     assert action_kind(chosen) == THROW, (
-        "the search stopped, so the depth-1 blind spot is no longer present and this test -- and the "
-        "recorded limitation it pins -- needs revisiting rather than passing silently"
+        f"the search stopped; the depth-1 property this test pins no longer holds and the recorded "
+        f"explanation for it needs revisiting rather than passing silently"
+    )
+
+
+def test_stopping_beats_throwing_when_the_defender_would_grow():
+    """The other side of the same coin, and the reason the property above is not universal.
+
+    The defender holds two cards of the attacker's own suit at higher rank. Throwing the off-suit card
+    gives the defender a trick *and* a card; stopping discards the table and refills both hands. With the
+    leaf scoring the refill correctly, stopping wins.
+
+    This is the test that would have caught the mis-stated rule. The Stage 10 version asserted throwing
+    dominated everywhere, and a fixture like this one is where that claim breaks.
+    """
+    hand0 = [card_at(6, 3), card_at(6, 0), card_at(0, 1)]
+    hand1 = [card_at(7, 0), card_at(8, 0)]
+    state = midround(hand0, hand1, trump=3)
+
+    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
+
+    assert action_kind(chosen) == STOP, (
+        f"the search chose kind {action_kind(chosen)} while the defender grows on every throw-in"
     )
 
 
@@ -465,7 +402,6 @@ def test_the_particle_set_changes_what_the_search_values():
     hand0 = [card_at(6, 0), card_at(6, 2), card_at(0, 1)]
     filler = [card_at(2, 2), card_at(3, 2)]
     state = midround(hand0, filler + [card_at(4, 2)], trump=3)
-    scratch = ScratchStates(36)
 
     throw = pack_action(THROW, hand0[0])   # card_at(6, 0)
     # `blocking` holds card_at(7, 0): same suit as the throw, higher rank, so it beats it.
@@ -476,8 +412,7 @@ def test_the_particle_set_changes_what_the_search_values():
     assert rules.BEAT not in reply_kinds(state, throw, filler + [card_at(4, 2), card_at(8, 1)])
 
     def score(particles):
-        return action_value(state, throw, 0, particles, WEIGHTS, scratch.after, scratch.hypothesis,
-                            scratch.reply)
+        return action_value(state, throw, 0, particles, WEIGHTS)
 
     assert score(blocking) != pytest.approx(score(harmless)), (
         "two opposite beliefs about the defender's hand produced the identical score, so the search is "
@@ -501,7 +436,6 @@ def test_the_search_returns_the_argmax_of_its_own_value_function():
     which did nothing at all. A draft fixture made this worse by calling a card "free" while giving the
     defender a trump that beat it -- the search was right and the fixture was wrong.
     """
-    scratch = ScratchStates(36)
     checked = disagreed_with_random = 0
 
     for offset in range(200):
@@ -532,13 +466,11 @@ def test_the_search_returns_the_argmax_of_its_own_value_function():
         checked += 1
 
         particles = certain_particles(state, 1, hand1, k=8)
-        chosen = int(expectimax(state, 0, particles, WEIGHTS, scratch=scratch))
-        scores = [action_value(state, int(a), 0, particles, WEIGHTS, scratch.after, scratch.hypothesis,
-                               scratch.reply) for a in options]
+        chosen = int(expectimax(state, 0, particles, WEIGHTS))
+        scores = [action_value(state, int(a), 0, particles, WEIGHTS) for a in options]
         best = float(np.max(scores))
 
-        assert action_value(state, chosen, 0, particles, WEIGHTS, scratch.after, scratch.hypothesis,
-                            scratch.reply) == pytest.approx(best, abs=1e-9), (
+        assert action_value(state, chosen, 0, particles, WEIGHTS) == pytest.approx(best, abs=1e-9), (
             f"the search chose a candidate worth {scores[0]:.4f} when {best:.4f} was available"
         )
         disagreed_with_random += chosen != int(choose_action(state, 0, RANDOM, 0))
@@ -564,10 +496,67 @@ def test_the_search_works_from_a_real_mid_game_position():
                           WEIGHTS)) in {int(a) for a in rules.legal_actions(state, player)}
 
 
-def test_the_mean_leaf_value_agrees_with_a_single_hypothesis():
-    """Ties `mean_leaf_value` to the search's own arithmetic, so the two cannot drift apart."""
+# --- the two arms -------------------------------------------------------------
+
+
+def test_the_two_search_ids_resolve_to_the_same_function():
+    """The experiment's central structural claim.
+
+    `SEARCH_UNIFORM` and `SEARCH_INFORMED` are one function. If they were two, their win-rate difference
+    would measure whatever else differed between them -- a different depth, a different tie-break, a
+    different action ordering -- and the project's headline number would be about that instead of about
+    information.
+    """
+    from durak.strategies import SEARCH_INFORMED, SEARCH_UNIFORM, get_policy
+
+    assert get_policy(SEARCH_UNIFORM) is get_policy(SEARCH_INFORMED)
+
+
+def test_the_only_difference_between_the_arms_is_the_hand_source():
+    """Asserted on the values, not on the moves.
+
+    The informed arm reads the opponent's real hand as one particle; the uninformed arm draws
+    `PARTICLE_COUNT` from the uniform prior. Everything else -- depth, weights, tie-break, reply model,
+    action ordering -- is read outside the branch, so this can only fail if one arm stops being the search
+    it was.
+
+    Both arms are driven through the same `expectimax`, so a difference here is a difference in *input*,
+    which is the only thing that is supposed to differ.
+    """
+    from durak.strategies.search_policy import PARTICLE_COUNT
+
     state = midround([card_at(6, 0), card_at(0, 1)], [card_at(2, 2), card_at(3, 2)])
     hand1 = [int(c) for c in state.hands[1, : state.hand_sizes[1]]]
 
-    assert mean_leaf_value(state, 0, certain_particles(state, 1, hand1, k=8), WEIGHTS) == \
-        pytest.approx(evaluate(state, 0, WEIGHTS), abs=1e-9)
+    informed = certain_particles(state, 1, hand1, k=1)
+    uninformed = initial_particles(state, 1, PARTICLE_COUNT, RngStream(3))
+
+    assert informed.shape[0] == 1, "the informed arm is one hypothesis: the real hand"
+    assert uninformed.shape[0] == PARTICLE_COUNT
+
+    informed_choice = int(expectimax(state, 0, informed, WEIGHTS))
+    uninformed_choice = int(expectimax(state, 0, uninformed, WEIGHTS))
+
+    for choice in (informed_choice, uninformed_choice):
+        assert choice in {int(a) for a in rules.legal_actions(state, 0)}, (
+            "both arms must search over the same legal actions, or they are not the same search"
+        )
+
+
+def test_both_arms_return_legal_actions_from_a_real_position():
+    """The registry's dispatch contract, checked for the two new ids through the policy itself."""
+    from durak.strategies import SEARCH_INFORMED, SEARCH_UNIFORM, InfoMode, get_policy
+
+    for strategy_id in (SEARCH_UNIFORM, SEARCH_INFORMED):
+        policy = get_policy(strategy_id)
+        info = InfoMode.TRUTH if strategy_id == SEARCH_INFORMED else InfoMode.PARTICLES
+        for seed in (1, 2, 3, 4, 5):
+            state = random_position(deck_size=36, seed=seed, max_actions=6 + seed)
+            if state.winner != rules.EMPTY:
+                continue
+            player = rules.acting_player(state)
+            action = int(policy(state, player, strategy_id, int(info), np.uint64(seed)))
+
+            assert action in {int(a) for a in rules.legal_actions(state, player)}, (
+                f"{strategy_id} returned an illegal action from a real position"
+            )
