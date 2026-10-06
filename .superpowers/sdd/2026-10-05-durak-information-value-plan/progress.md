@@ -248,3 +248,46 @@ Task 10: VERIFIED: `evaluate` correct by hand -- hands (2 vs 3), trump suit 0 ->
 Task 10: RECORDED LIMITATION (pinned by a test): at depth 1 throwing dominates stopping even when every throw-in is beatable, because a beaten throw leaves both hands unchanged, a take improves the score, and STOP makes the attacker pick up the table. Fixing needs depth 2 or a sixth evaluation term -- the latter changes spec 5.4. DECISION REQUIRED before Task 12 publishes win rates.
 Task 10: RULING (test): the search's contract is asserted as "the chosen action is the argmax of `action_value`" over 200 positions, not as a comparison against RANDOM. With three throw-ins and a stop available RANDOM throws 3/4 of the time, so "beats RANDOM" would be a 100%-vs-75% claim that also passes a search doing nothing.
 Task 10: OPEN: full `NUMBA_DISABLE_JIT=1` suite must be re-run before Task 14 -- durak/rules.py changed and the last full interpreted pass predates it.
+
+Task 11: BLOCKED on the same Numba ABI wall, now stated precisely. Tree green at 296 passed; no code committed.
+
+Task 11: LIMITATION, exact statement (probe-verified, supersedes the narrower Stage 10 wording):
+  "An @njit function called from Python may never construct a GameState. It may pass state objects
+  around freely and copy into buffers the caller allocated, but creating one -- inline or via a helper,
+  with any number of arguments, including one -- raises `TypeError: invalid number of args: expected 8,
+  got 7` from Numba's ArgPacker."
+  Probe matrix:
+    njit(state) -> scalar, no construction                              OK
+    njit(state, state) -> scalar, no construction                       OK
+    njit(state, int) copying .deck/.hands via _copy_into                OK
+    njit(deck_size, streams, tunables) -> GameState   (deal_state)     OK
+    njit(state) + inline GameState(...)                                FAIL
+    njit(state) + GameState(...) via a no-state helper                 FAIL
+    njit(state, int) + inline GameState(...)                           FAIL
+  The one shape that constructs successfully takes NO state argument. That is why `setup_game` works and
+  why a policy cannot.
+
+Task 11: WHY THIS BLOCKS IT. `policy_search(state, player, strategy_id, info_mode, rng_state)` has a
+  signature pinned by the registry, and `expectimax` needs three `GameState` buffers. So the policy must
+  produce scratch states without creating any. Two non-options, ruled out explicitly:
+    - a module-level cached scratch: Task 14 runs the tournament in a `prange`, and a shared buffer
+      across threads is a silent correctness bug, not a performance one. Must never be done.
+    - allocating per call in Python: ~190 us per state against ~0.3 us inside compiled code, and the
+      policy is called once per action.
+
+Task 11: CANDIDATE SOLUTIONS, all of which change a boundary, so none is taken without approval:
+  (a) Per-state scratch. Give `GameState` dedicated scratch arrays and have the search use them. Needs
+      no construction, and is automatically thread-safe under `prange` because each thread plays a
+      different game and therefore holds a different state. Cost: the jitclass grows, and the scratch
+      must be documented as not part of the game state so the equivalence probe's field hashing and
+      `audit_game`'s independent pass are unaffected.
+  (b) Extend the policy signature to carry the scratch. Cleanest semantics -- the caller owns working
+      memory -- but the signature is pinned in `durak/strategies/base.py` and by every registered policy,
+      and the engine's dispatch would change. Cost: touches all policies and the engine.
+  (c) Restructure the leaf to take scalars instead of a state: `evaluate` already only reads
+      (hand sizes, trumps, high counts, role, deck-empty). A scalar-leaf form removes the *evaluation*
+      need for a second state, but `apply_action` and `legal_actions` still need one, so this does not
+      solve the problem alone -- it would have to be combined with (a) or (b).
+  RECOMMENDATION: (a). It is the smallest change, it is thread-safe by construction rather than by care,
+  and it keeps the pinned signature. It needs one decision from the user: whether scratch buffers belong
+  inside `GameState`.

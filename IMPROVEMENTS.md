@@ -230,3 +230,17 @@ Resolution priority is the project owner's call, not the implementer's.
   the caller's buffer with the state it is given, the second acts on a buffer the caller already prepared.
   A silent overwrite in a performance helper cost a particle-sensitivity test its entire reason for
   existing. Every helper taking a scratch buffer documents which it does.
+
+- **Stage 11 (blocked)** — exact Numba constraint, probe-verified: an `@njit` function called from Python
+  may **never** construct a `GameState`. It may pass state objects around and copy into caller-allocated
+  buffers, but creating one — inline, via a helper, with one argument or many — raises
+  `TypeError: invalid number of args: expected 8, got 7`. The single shape that constructs successfully
+  takes **no state argument**, which is why `setup_game` works and a policy cannot.
+
+  Stage 10 recorded this as "no inline construction", which was too narrow and cost an extra round of
+  hypotheses. Recorded the full matrix this time so it is not re-derived.
+
+- **Stage 11 (blocked)** — a module-level cached scratch for the search is **not** an option and should
+  never be written: Task 14 runs the tournament in a `prange`, and a buffer shared across threads is a
+  silent correctness bug rather than a performance one. If a future change introduces one, it will pass
+  every single-threaded test in the suite and corrupt the dataset.
