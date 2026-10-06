@@ -512,3 +512,57 @@ Task 12: NON-TERMINATION MECHANISM, now traced rather than guessed. A single cap
   `action_value` special-cases BEAT and TAKE differently from ATTACK/THROW. Next task: instrument one
   defending position, print `action_value` per legal action and per reply, and compare against
   `leaf_profile_after` called directly with the same hands.
+
+Task 12: ROOT CAUSE FOUND AND PROVEN. Traced from step 100 of the same capped game, trump suit 3:
+
+    step 100 p1 ATTACK(2)   hands 6/7  deck 23
+    step 101 p0 TAKE        hands 6/6  deck 23
+    step 102 p0 ATTACK(2)   hands 7/6  deck 23      <- the same card, handed straight back
+    step 103 p1 TAKE        hands 6/6  deck 23
+    step 104 p1 ATTACK(10)  hands 6/7  deck 23
+    step 105 p0 TAKE        hands 6/6  deck 23
+    step 106 p0 ATTACK(10)  hands 7/6  deck 23      <- again
+    step 107 p1 TAKE        hands 6/6  deck 23
+
+  Cards 2 and 10 (both suit 2, neither a trump) alternate forever. Neither player holds a card that can
+  beat the other, so every attack is answered with a forced take, and the taker immediately attacks the
+  card back. The deck is never drawn and neither hand ever empties.
+
+  WHY THE SEARCH DOES THIS. The card-count term is `cards_opponent - cards_player`. When the opponent
+  takes, the attacker's hand shrinks by one and the opponent's grows by one, so the term improves by 2.
+  A depth-1 leaf therefore scores **handing the opponent a card they cannot beat as progress** -- which
+  at depth 1 is indistinguishable from winning a trick. So the search is correct with respect to its
+  evaluation and the evaluation is wrong with respect to the game: a card TRANSFERRED to the opponent is
+  not progress, only a card that reaches the discard is.
+
+  That single defect explains every observation at once: the deck is never consumed (no round ever ends
+  with a discard, because every round is a take), the hand sizes oscillate (each transfer is immediately
+  reversed), and nothing terminates (the card count is conserved across the whole cycle).
+
+Task 12: HYPOTHESES TESTED.
+  (a) Reply enumeration missing a BEAT: REFUTED. In a traced defending position the reply set is correctly
+      empty (`beaters: []`) because no card in that hand beats the attack, and `legal_actions` correctly
+      offers only TAKE. The forced take is real, not a bug.
+  (b) Leaf scored from the wrong seat: REFUTED. `action_value` and a direct `leaf_profile_after` call on the
+      same hands agree exactly (-2.7000 both) on a real defending position.
+  (c) Second-ply assumption wrong: NOT the cause here, though it remains a separate weakness. For BEAT the
+      code hardcodes ply 2 as STOP, which is legal but ignores the attacker's throw-ins.
+  USER'S HYPOTHESIS (the two models cannot play anything else): CONFIRMED in substance. Over 300 decisions
+      the two arms chose the same action 219 times (73%), and the kind-pairs are dominated by (ATTACK,
+      ATTACK) 137 and (TAKE, TAKE) 121. They converge on the same cycle for the same reason as above: the
+      evaluation makes a forced take look like progress, so feeding the card back is the argmax for both.
+
+  Cost of leaving it: 179 games/s against GREEDY's 22,948, and a capped game is 10,000 rounds against a
+  median of 21 -- roughly 300x the work of a normal game. The 30-minute sweep was this defect.
+
+Task 12: FIX DIRECTION, not taken here because it changes spec 5.4 and needs a decision. Three candidates:
+  (1) Give the card-count term its correct meaning inside `durak/leaf.py`: count only cards that have left
+      play, so a card the opponent took is neutral rather than progress. Cheapest, touches no interface,
+      and is a genuine correction of a misapplied term rather than a new one.
+  (2) Add a sixth term penalising transfers. Equivalent in effect to (1) but changes the published
+      evaluation, so every existing weight-sweep result would be about the wrong function.
+  (3) Depth 2, so the search can see the loop closing. Costs roughly the square in leaf evaluations and
+      reopens the question of dataset scale.
+  RECOMMENDATION: (1). It is a correction, not a new parameter, it is local to the one module that knows
+  what happened in the ply, and it leaves the five published weights and the sweep grid meaning what they
+  say. It must be decided before any win rate is measured.
