@@ -724,3 +724,50 @@ Task 12: `k` IS NOT A KNOB, and the sweep that looked like it proved the opposit
 
 Task 12: cross-mode gate. 320 passed with `NUMBA_DISABLE_JIT=1`. One earlier run passed but had been
   started before the config edits landed, so it was not evidence for the current tree; it was re-run.
+
+Task 14: BLOCKED, and not for a reason the plan anticipated. `play_block` cannot be compiled with `prange`
+  on this toolchain (numba 0.68.0, numpy 2.5.3, Python 3.14.7).
+
+  THE LIMIT, reproduced minimally and independent of this project:
+    @njit(parallel=True) on a function whose prange body does `out[i]["a"] = i` for
+    `np.dtype([("a", int64)])`  ->  NotImplementedError from numba/parfors/parfor.py.
+  Both write forms fail: the direct field set and the `row = out[i]` view. Writing to plain 1-D arrays
+  inside prange compiles and runs normally, and a `@njit` helper writing into a plain array also works.
+  So the parallel transform handles 1-D buffers and does not handle structured arrays at all.
+
+  `engine._play_one` makes 21 structured-array writes, which is why it fails even with telemetry levels
+  disabled (`record_rounds=False, record_moves=False`), and the failure reproduces with level 1 alone.
+
+  WORK DONE AND THEN REVERTED, because it did not achieve the task's purpose. A per-game write slot
+  (`rounds[i*LIMIT:(i+1)*LIMIT]`) plus a serial compaction pass was implemented and measured: it made the
+  loop race-free and kept the output byte-identical (verified for GREEDY, SEARCH_UNIFORM and CONSERVATIVE
+  with telemetry on), but the parallel compilation still failed, so the slot layout would have been an
+  abstraction with no consumer. `durak/engine.py` is reverted and unchanged.
+
+  A SECOND FINDING worth keeping: `njit(cache=True)` masked the compile failure. The parallel dispatcher
+  reported 0 nopython signatures and returned a stale artefact from disk, so a benchmark reported
+  "1.00x speedup" instead of an error. Any prange work here must check `_play_block_parallel.nopython_signatures`
+  rather than trusting a timing number.
+
+  THE OPTIONS, and this is a decision rather than a silent choice:
+    (1) Redesign telemetry to per-column 1-D arrays, assemble the structured arrays serially after the
+        parallel loop. This makes prange reachable and is the only option that preserves both the structured
+        dataset layout and parallelism. Cost: a real change to `telemetry.py` and `_play_one`, which is the
+        plan's own warning about "a rewrite being forced" -- but the rewrite here is forced by the compiler.
+    (2) Parallelise at the block level instead. `play_block` stays serial; the runner in Task 15 splits the
+        work across processes, each running whole blocks. No engine change at all, and the dataset is
+        unaffected because blocks are seeded by game index. Cost: process overhead and no shared-memory
+        arrays, which is what the project wanted from prange.
+    (3) Ship serial and record the wall-clock cost. The uniform search arm runs at ~59 games/s on 12 threads,
+        which sets the dataset scale for Task 18.
+
+  Recommendation: (2). The plan wanted prange for a shared-memory block loop, but the plan ALSO made
+  determinism the project's central guarantee, and (1) buys parallelism by rewriting the one module whose
+  layout every dataset depends on. (2) touches no telemetry code and keeps blocks independently verifiable,
+  which is what Task 15's DuckDB views are built on. Its cost is honest and measurable rather than hidden.
+
+  DELIVERED from this task regardless: `tests/test_equivalence.py`, with the compiled-versus-interpreted
+  gate (the project's central guarantee, both deck sizes, five strategy pairs, three pairings each, every
+  level-1/2/3 field compared by SHA-256 per array), a block-splitting equivalence test, and a row-consistency
+  test. The serial-versus-parallel comparison is present but SKIPPED with the reason recorded, rather than
+  written to pass by comparing the serial path with itself.
