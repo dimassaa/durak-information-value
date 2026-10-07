@@ -340,73 +340,59 @@ def _refill_and_roles(mine, size_p: int, theirs, size_o: int, deck, deck_len: in
 @njit(cache=True)
 def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int, card_b: int,
                        hand_p, hand_o, weights) -> float:
-    """`evaluate`'s value for the position after two plies: one by `player`, then one by the opponent.
-
-    Role-general on purpose. `player` is the *acting* player, not the attacker, so the first ply is an
-    attack or a throw only when they are attacking and a beat when they are defending, and the second ply
-    is the mirror image.
-
-    `hand_p` and `hand_o` are the two hands the search *knows*: the acting player's own, and its hypothesis
-    about the opponent's. Neither is read from `state` beyond the table, the deck and the trump, so the
-    same call serves a sampled particle set and the opponent's real hand.
-
-    A ply that empties a hand ends the game: the remaining ply does not happen, and no refill occurs.
-    """
-    trump = state.trump
-    mine, size_p, theirs, size_o, table, table_size, defenses, defense_count, deck, deck_len, \
-        player_attacks = _prepare(state, player, hand_p, hand_o)
-
-    # Stats of the cards that change hands during these plies, split by original owner. Fed to `_finish`,
-    # which neutralises them: a transfer is not progress. See `_finish` for why all three stats travel.
-    moved_p = np.zeros(3, dtype=np.int64)
-    moved_o = np.zeros(3, dtype=np.int64)
-
-    # --- ply 1: `player` acts ---------------------------------------------------
-    round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-        kind_a, card_a, player_attacks, True, mine, size_p, theirs, size_o, trump, table, table_size,
-        defenses, defense_count, moved_o)
-
-    if game_over:
-        return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks, weights,
-                       moved_p, moved_o)
-
-    # --- ply 2: the other seat acts --------------------------------------------
-    round_end_kind = kind_a
-    if not round_ends:
-        # Ply 1 only changes the attacker on a round end, and those cases set `round_ends`, so the
-        # attacker is still whoever it was. The actor keeps their own role; the other seat plays the
-        # mirror.
-        round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-            kind_b, card_b, not player_attacks, False, mine, size_p, theirs, size_o, trump, table,
-            table_size, defenses, defense_count, moved_p)
-        round_end_kind = kind_b
-        if game_over:
-            return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks,
-                           weights, moved_p, moved_o)
-
-    # --- refill, if a round ended ----------------------------------------------
-    if round_ends:
-        size_p, size_o, deck_len, player_attacks = _refill_and_roles(
-            mine, size_p, theirs, size_o, deck, deck_len, player_attacks, round_end_kind)
-
-    return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks, weights,
-                   moved_p, moved_o)
+    """The depth-1 leaf: two plies. A named case of :func:`leaf_profile_after_n`."""
+    kinds = np.empty(4, dtype=np.int64)
+    cards = np.empty(4, dtype=np.int16)
+    kinds[0] = kind_a
+    cards[0] = card_a
+    kinds[1] = kind_b
+    cards[1] = card_b
+    return leaf_profile_after_n(state, player, 2, kinds, cards, hand_p, hand_o, weights)
 
 
 @njit(cache=True)
-def leaf_profile_after_ply3(state, player: int, kind_a: int, card_a: int, kind_b: int, card_b: int,
-                            kind_c: int, card_c: int, hand_p, hand_o, weights) -> float:
-    """`evaluate`'s value after THREE plies: `player`, the opponent, then `player` again.
+def leaf_profile_after_ply3(state, player: int, kind_a: int, card_a: int, kind_b: int,
+                            card_b: int, kind_c: int, card_c: int, hand_p, hand_o,
+                            weights) -> float:
+    """The depth-2 leaf: three plies. A named case of :func:`leaf_profile_after_n`."""
+    kinds = np.empty(6, dtype=np.int64)
+    cards = np.empty(6, dtype=np.int16)
+    kinds[0], cards[0] = kind_a, card_a
+    kinds[1], cards[1] = kind_b, card_b
+    kinds[2], cards[2] = kind_c, card_c
+    return leaf_profile_after_n(state, player, 3, kinds, cards, hand_p, hand_o, weights)
 
-    The depth-2 leaf. One ply further on than :func:`leaf_profile_after`, and nothing else about it changes:
-    the same hands, the same table arithmetic, the same refill, the same `_finish`. The third ply is
-    reached only when the round has not ended and no hand has emptied; when it has, the value is
-    :func:`leaf_profile_after`'s, so a caller may pass this unconditionally and get the same number.
 
-    `kind_c` is `player`'s move at their next turn: a throw-in or a stop if they are attacking, a beat or a
-    take if they are defending. Taking the best of them is the search's own maximisation at its own node --
-    the opponent's replies stay averaged, which is the module's stated reply model.
+# --- depth as a parameter ------------------------------------------------------------------------
+#
+# The two leaves above are one body with their plies written out, and the two ply enumerations are one
+# body with a fixed number of leading plies. Verified EXACTLY equal before being relied on: 360/360
+# two-ply and 272/272 three-ply comparisons, no ULP of difference. See IMPROVEMENTS.md 57.
+#
+# Generalising is only safe because the ply sequence is determined: `player` moves, the opponent answers,
+# `player` moves again, alternating. The parity of the ply count says whose turn it is and which hand to
+# reason about, so no role has to be threaded through the call.
+
+
+@njit(cache=True)
+def leaf_profile_after_n(state, player: int, nplies: int, kinds: np.ndarray, cards: np.ndarray,
+                         hand_p, hand_o, weights) -> float:
+    """`evaluate`'s value after `nplies` plies: `player`, the opponent, `player`, and so on.
+
+    The semantics are those of the written-out bodies, and each was carried over rather than reinvented:
+
+    * a ply that empties a hand ends the game at once, so the rest of the sequence never happens and no
+      refill occurs -- the win check fires the moment a card leaves a hand, before any answer and before
+      six fresh cards could return;
+    * a ply that ends the round stops the sequence;
+    * the refill happens once, at the end, and only if the round ended;
+    * `moved_p` and `moved_o` accumulate per ACTOR, not per parity of the ply index.
+
+    An empty sequence is not meaningful and returns 0.0: every call site has at least one ply.
     """
+    if nplies <= 0:
+        return 0.0
+
     trump = state.trump
     mine, size_p, theirs, size_o, table, table_size, defenses, defense_count, deck, deck_len, \
         player_attacks = _prepare(state, player, hand_p, hand_o)
@@ -414,32 +400,20 @@ def leaf_profile_after_ply3(state, player: int, kind_a: int, card_a: int, kind_b
     moved_p = np.zeros(3, dtype=np.int64)
     moved_o = np.zeros(3, dtype=np.int64)
 
-    round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-        kind_a, card_a, player_attacks, True, mine, size_p, theirs, size_o, trump, table, table_size,
-        defenses, defense_count, moved_o)
-    if game_over:
-        return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks, weights,
-                       moved_p, moved_o)
-
-    round_end_kind = kind_a
-    if not round_ends:
+    round_ends = False
+    round_end_kind = 0
+    for ply in range(nplies):
+        mine_turn = (ply % 2) == 0
         round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-            kind_b, card_b, not player_attacks, False, mine, size_p, theirs, size_o, trump, table,
-            table_size, defenses, defense_count, moved_p)
-        round_end_kind = kind_b
+            kinds[ply], cards[ply], player_attacks if mine_turn else not player_attacks, mine_turn,
+            mine, size_p, theirs, size_o, trump, table, table_size, defenses, defense_count,
+            moved_o if mine_turn else moved_p)
+        round_end_kind = kinds[ply]
         if game_over:
             return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks,
                            weights, moved_p, moved_o)
-
-    # --- ply 3: `player` acts again, in their original role ---------------------
-    if not round_ends:
-        round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-            kind_c, card_c, player_attacks, True, mine, size_p, theirs, size_o, trump, table,
-            table_size, defenses, defense_count, moved_o)
-        round_end_kind = kind_c
-        if game_over:
-            return _finish(mine, size_p, theirs, size_o, trump, player, deck_len, player_attacks,
-                           weights, moved_p, moved_o)
+        if round_ends:
+            break
 
     if round_ends:
         size_p, size_o, deck_len, player_attacks = _refill_and_roles(
@@ -458,6 +432,7 @@ def _collect(hand, size: int, table, table_size: int, defenses, defense_count: i
     for i in range(defense_count):
         hand[size] = defenses[i]
         size += 1
+
 
 
 @njit(cache=True)
@@ -504,32 +479,6 @@ def _finish(mine, size_p: int, theirs, size_o: int, trump: int, player: int, dec
     return value
 
 
-@njit(cache=True)
-def reply_cards_in(hand, size: int, trump: int, target: int) -> np.ndarray:
-    """Cards in a *hypothesised* hand that beat `target`.
-
-    The form the search uses: the opponent's hand is not `state.hands[opponent]` but one particle's cards,
-    so the enumeration has to accept the hand as an array. :func:`reply_cards` is the wrapper for the
-    live-state case and exists so `tests/test_leaf.py` can diff it against `rules.legal_actions`.
-    """
-    out = np.empty(hand.shape[0], dtype=np.int16)
-    count = 0
-    for i in range(size):
-        card = int(hand[i])
-        if beats(card, target, trump):
-            out[count] = card
-            count += 1
-    return out[:count].copy()
-
-
-# --- enumerating the search's own plies, state-free -----------------------------
-#
-# `rules.legal_actions` cannot be called here: it needs a `GameState`, and a jitclass cannot be built
-# inside an njit function reached from Python. So the two enumerations the depth-2 search needs -- the
-# opponent's answers, and the acting player's own next moves -- are written out over the local arrays that
-# `_prepare` already built. `tests/test_leaf.py` diffs both against the engine over random positions, which
-# is what makes reimplementing the rules here safe rather than reckless.
-
 
 @njit(cache=True)
 def _throwin_legal_in(card: int, table, table_size: int, defenses, defense_count: int,
@@ -575,69 +524,46 @@ def _write_throwins(hand, size: int, table, table_size: int, defenses, defense_c
 
 
 @njit(cache=True)
-def second_plies(state, player: int, kind_a: int, card_a: int, hand_p, hand_o, out_kinds,
-                 out_cards) -> int:
-    """The opponent's answers to `player`'s first action, in the engine's order. Returns how many.
+def reply_cards_in(hand, size: int, trump: int, target: int) -> np.ndarray:
+    """Cards in a *hypothesised* hand that beat `target`.
 
-    Every legal answer, never truncated: dropping one makes the opponent look weaker than the rules allow,
-    which biases the search toward attacking and looks like strength.
-
-    Two shapes, because the two roles answer differently. Against an attack or a throw the defender beats
-    it or takes it. Against a beat the *attacker* throws in or stops -- and the throw-ins are a property of
-    the attacker's hand, which is the hypothesis here, so they are enumerated from the particle exactly as
-    the beats are. Depth 1 assumed that attacker stops; that assumption is what kept a depth-1 leaf from
-    ever seeing the defender's third ply, and it is the reason the enumerator exists at all.
-
-    Returns 0 when `player`'s own action ended the round, because then there is no second ply.
+    The form the search uses: the opponent's hand is not `state.hands[opponent]` but one particle's cards,
+    so the enumeration has to accept the hand as an array. :func:`reply_cards` is the wrapper for the
+    live-state case and exists so `tests/test_leaf.py` can diff it against `rules.legal_actions`.
     """
-    trump = int(state.trump)
-    defense_ranks = bool(state.throwin_defense_ranks)
-    mine, size_p, theirs, size_o, table, table_size, defenses, defense_count, deck, deck_len, \
-        player_attacks = _prepare(state, player, hand_p, hand_o)
-
-    moved_o = np.zeros(3, dtype=np.int64)
-
-    round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-        kind_a, card_a, player_attacks, True, mine, size_p, theirs, size_o, trump, table, table_size,
-        defenses, defense_count, moved_o)
-    if round_ends or game_over:
-        return 0
-
+    out = np.empty(hand.shape[0], dtype=np.int16)
     count = 0
-    if player_attacks:
-        # The opponent defends `card_a`, which is the newest and only unanswered attack.
-        for i in range(size_o):
-            card = int(theirs[i])
-            if beats(card, card_a, trump):
-                out_kinds[count] = BEAT
-                out_cards[count] = card
-                count += 1
-        out_kinds[count] = TAKE
-        out_cards[count] = 0
-        return count + 1
+    for i in range(size):
+        card = int(hand[i])
+        if beats(card, target, trump):
+            out[count] = card
+            count += 1
+    return out[:count].copy()
 
-    # The opponent is the attacker with the table fully answered: it may throw in, or stop.
-    count += _write_throwins(theirs, size_o, table, table_size, defenses, defense_count, size_p,
-                             defense_ranks, out_kinds, out_cards)
-    if table_size == defense_count:
-        out_kinds[count] = STOP
-        out_cards[count] = 0
-        count += 1
-    return count
+
+# --- enumerating the search's own plies, state-free -----------------------------
+#
+# `rules.legal_actions` cannot be called here: it needs a `GameState`, and a jitclass cannot be built
+# inside an njit function reached from Python. So the two enumerations the depth-2 search needs -- the
+# opponent's answers, and the acting player's own next moves -- are written out over the local arrays that
+# `_prepare` already built. `tests/test_leaf.py` diffs both against the engine over random positions, which
+# is what makes reimplementing the rules here safe rather than reckless.
+
 
 
 @njit(cache=True)
-def third_plies(state, player: int, kind_a: int, card_a: int, kind_b: int, kind_b_card: int,
+def plies_after(state, player: int, nplies: int, in_kinds: np.ndarray, in_cards: np.ndarray,
                 hand_p, hand_o, out_kinds, out_cards) -> int:
-    """`player`'s own next moves after their action and the opponent's answer. Returns how many.
+    """The legal moves of whoever is to move after `nplies` plies. Returns how many.
 
-    Zero when either earlier ply ended the round or emptied a hand, which is exactly the case where the
-    depth-2 leaf collapses to the depth-1 one. The caller therefore reads 0 as "score this line with
-    `leaf_profile_after`" and needs no separate depth flag.
+    One function rather than a `second_plies` and a `third_plies`, because they differ only in how many
+    plies precede them. Parity picks the actor: after an odd count it is the opponent, after an even
+    count it is `player`. That is what makes the search's mutual recursion possible at all.
 
-    Enumerated from the local arrays after two plies, so the hand the search reasons about is the hand
-    those two plies leave behind -- which matters for the throw-ins: the card `player` shed in ply one is
-    no longer available to them in ply three.
+    Covers all four shapes the rules distinguish, which the two written-out enumerations between them did
+    NOT: at `nplies == 0` or after a refill the table is empty and the attacker opens with any card. A
+    depth of four reaches that case on its fifth ply, so omitting it would have produced a search that
+    silently cannot open a round -- a plausible-looking policy with a blind spot.
     """
     trump = int(state.trump)
     defense_ranks = bool(state.throwin_defense_ranks)
@@ -647,34 +573,44 @@ def third_plies(state, player: int, kind_a: int, card_a: int, kind_b: int, kind_
     moved_p = np.zeros(3, dtype=np.int64)
     moved_o = np.zeros(3, dtype=np.int64)
 
-    round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-        kind_a, card_a, player_attacks, True, mine, size_p, theirs, size_o, trump, table, table_size,
-        defenses, defense_count, moved_o)
-    if round_ends or game_over:
-        return 0
+    for ply in range(nplies):
+        mine_turn = (ply % 2) == 0
+        round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
+            in_kinds[ply], in_cards[ply], player_attacks if mine_turn else not player_attacks, mine_turn,
+            mine, size_p, theirs, size_o, trump, table, table_size, defenses, defense_count,
+            moved_o if mine_turn else moved_p)
+        if round_ends or game_over:
+            return 0
 
-    round_ends, game_over, size_p, size_o, table_size, defense_count = _apply_ply(
-        kind_b, kind_b_card, not player_attacks, False, mine, size_p, theirs, size_o, trump, table,
-        table_size, defenses, defense_count, moved_p)
-    if round_ends or game_over:
-        return 0
+    # Parity of the count already applied says whose turn it is, and the hand to reason about.
+    next_is_player = (nplies % 2) == 0
+    next_hand = mine if next_is_player else theirs
+    next_size = size_p if next_is_player else size_o
+    defender_size = size_o if next_is_player else size_p
+    next_attacks = player_attacks if next_is_player else not player_attacks
 
     count = 0
-    if player_attacks:
-        # Still the attacker, and the table is fully answered: throw in more, or stop.
-        count = _write_throwins(mine, size_p, table, table_size, defenses, defense_count, size_o,
-                                defense_ranks, out_kinds, out_cards)
+    if next_attacks:
+        if table_size == 0:
+            # Opening a fresh round, which is reachable only once a refill has emptied the table. Any
+            # card in hand opens it.
+            for i in range(next_size):
+                out_kinds[count] = ATTACK
+                out_cards[count] = int(next_hand[i])
+                count += 1
+            return count
+        count = _write_throwins(next_hand, next_size, table, table_size, defenses, defense_count,
+                                defender_size, defense_ranks, out_kinds, out_cards)
         if table_size == defense_count:
             out_kinds[count] = STOP
             out_cards[count] = 0
             count += 1
         return count
 
-    # The defender owes an answer to the newest attack, which sits at the table's `defense_count` slot --
-    # the opponent's throw-in from ply two, since the attack `player` beat in ply one is already answered.
+    # The defender owes an answer to the newest unanswered attack.
     target = int(table[defense_count])
-    for i in range(size_p):
-        card = int(mine[i])
+    for i in range(next_size):
+        card = int(next_hand[i])
         if beats(card, target, trump):
             out_kinds[count] = BEAT
             out_cards[count] = card
@@ -682,3 +618,29 @@ def third_plies(state, player: int, kind_a: int, card_a: int, kind_b: int, kind_
     out_kinds[count] = TAKE
     out_cards[count] = 0
     return count + 1
+
+
+@njit(cache=True)
+def second_plies(state, player: int, kind_a: int, card_a: int, hand_p, hand_o, out_kinds,
+                 out_cards) -> int:
+    """The opponent's answers to `player`'s first action. The depth-1 case of :func:`plies_after`.
+
+    Kept as a named entry point rather than folded into the general one because the tests name it, and a
+    test that reads as "the opponent's replies equal the rules" is worth more than a call with a literal.
+    """
+    kinds = np.empty(2, dtype=np.int64)
+    cards = np.empty(2, dtype=np.int16)
+    kinds[0] = kind_a
+    cards[0] = card_a
+    return plies_after(state, player, 1, kinds, cards, hand_p, hand_o, out_kinds, out_cards)
+
+
+@njit(cache=True)
+def third_plies(state, player: int, kind_a: int, card_a: int, kind_b: int, kind_b_card: int,
+                hand_p, hand_o, out_kinds, out_cards) -> int:
+    """`player`'s own next moves. The depth-2 case of :func:`plies_after`."""
+    kinds = np.empty(4, dtype=np.int64)
+    cards = np.empty(4, dtype=np.int16)
+    kinds[0], cards[0] = kind_a, card_a
+    kinds[1], cards[1] = kind_b, kind_b_card
+    return plies_after(state, player, 2, kinds, cards, hand_p, hand_o, out_kinds, out_cards)
