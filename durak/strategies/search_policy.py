@@ -20,11 +20,16 @@ a question nobody asked. Rebuilding costs ``k * U`` work, which is negligible ne
 
 What this buys, and what it does not
 -----------------------------------
-Depth 1, replies averaged, leaf scored without a continuation: the informed arm's strength is bounded from
-below, so the measured price of information is a lower bound. And per the recorded limitation, a depth-1
-search throws even when every throw-in can be beaten, because a beaten throw leaves both hands unchanged
-and `STOP` makes the attacker pick up the table. That is pinned by a test in `tests/test_search.py` so it
-stays a fact rather than a surprise when Task 12 measures win rates.
+Depth 2, the opponent's replies averaged and the acting player's own next move maximised. A deeper search
+could only find moves a shallower one misses, so the informed arm's strength is still bounded from below
+and the measured price of information is a lower bound.
+
+The recorded depth-1 limitation is gone rather than papered over. At depth 1 the search threw even when
+every throw-in could be beat, because a beaten throw leaves both hands unchanged and the static leaf
+therefore scored it strictly *worse* than stopping. At depth 2 the search sees that it can stop after
+being beaten -- which reaches the same discard and the same refill -- so the beaten branch is no longer
+penalised. Two tests in `tests/test_search.py` pin both halves of that claim, including the guard that
+depth 2 does not make throwing universal.
 """
 
 from __future__ import annotations
