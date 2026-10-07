@@ -896,3 +896,44 @@ Task 18 Step 1: THE SCALE, decided and written down BEFORE the run so it is not 
   reads at that resolution.
 
   The pilot runs at 10% of the primary tier. A non-clean pilot is a defect to fix, never a data point.
+
+Task 13+: THE SEARCH WEAKNESS IS MEASURED, AND THE CAUSE IS NOT (ONLY) DEPTH.
+
+  Measured on the 1.14M-game dataset, pairwise, 36-card deck, both seat orders:
+    SEARCH_UNIFORM vs GREEDY  0.000    SEARCH_INFORMED vs GREEDY  0.000
+  40,000 games, ZERO losses. That is not a strength gradient -- a genuinely mediocre strategy beats a
+  mediocre one about 55-60% of the time, not never. The marginal table did not show this at all, which
+  is the argument for the pairwise metric the user asked for.
+
+  Action mix, SEARCH vs AUTO_DEFEND, before the leaf fix:
+    SEARCH  ATTAC 0.144  THROW 0.103  STOP 0.131  BEAT 0.123  TAKE 0.499  hands 11.82/0.00
+    GREEDY  ATTAC 0.363  THROW 0.209  STOP 0.204  BEAT 0.216  TAKE 0.007  hands  0.42/6.70
+  The search took half its defensive actions and finished with nearly twelve cards.
+
+  ROOT CAUSE (fixed in 8906dbe): `leaf.py`'s `kind_a == TAKE` branch credited the picked-up cards to
+  the OPPONENT. The evaluation reads `cards_opponent - cards_player`, so handing the opponent cards
+  RAISED the player's score, and taking beat every alternative. After the fix:
+    SEARCH  ATTAC 0.290  THROW 0.128  STOP 0.194  BEAT 0.177  TAKE 0.212  hands 10.50/0.00
+  Take rate 49.9% -> 21.2%. Differential tests against the engine are EXACT again.
+
+  THE STAGE-12 TRANSFER CORRECTION WAS MASKING THIS, not independent of it. It was derived from the same
+  wrong attribution, so it cancelled the error rather than exposing it, and weakening the differential
+  test from exact equality to "equality plus a residual" removed the one assertion that would have caught
+  it. Removed, not extended.
+
+  NOT A BUG, and asserted as such: a take is legitimately worth +1 on the count term. The opponent holds
+  one more card to shed and the thrower moved closer to empty. An earlier note in this file claimed taking
+  "must be penalised", which is wrong. What depth 1 cannot represent is the DEFERRED cost -- the same
+  opponent attacks again immediately with the larger hand while the taker defends. That, and not the
+  card count, is what makes taking bad.
+
+  STILL WEAK: hands 10.50 against GREEDY's 0.42. The fix reduced the symptom, it did not resolve it.
+  Depth 2 is the next step and is being measured rather than assumed to help. If it does not, the prime
+  remaining suspect is the weight vector -- a trump weight of 2.0 against a card-count weight of 1.0 --
+  which is a separate decision and has NOT been touched.
+
+Task 18 housekeeping: `test_invariants_hold_after_every_transition_at_scale` cut from 300,000 games to
+  60,000 and its floor from 15M transitions to 3M. Both previous numbers were wrong for different reasons
+  and the history is recorded in the test's docstring. This test is a smoke check; the project's actual
+  correctness guarantee is the compiled-vs-interpreted bit-for-bit comparison in
+  `tests/test_equivalence.py`.

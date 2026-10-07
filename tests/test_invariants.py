@@ -170,18 +170,27 @@ def test_invariants_hold_after_every_transition_at_scale(deck_size):
     against roughly 0.3 through the compiled loop. A version of this test that walked from Python
     checked 300,000 transitions in 57 seconds.
 
-    The game count is 300,000 per deck, not the 5,000 it was when this test was written. The old figure
-    was calibrated while `AUTO_DEFEND` still stalled: about 5% of its games ran to the 10,000-round cap,
-    which inflated the transition count without testing anything the short games do not. With the take
-    rule fixed, games average roughly 20 rounds instead of roughly 1,000, so the same 5,000 games yield
-    300,000 transitions rather than 37 million -- the invariant was still being checked, just three
-    orders of magnitude thinner than the floor this test asserts. The floor stays; the sample was
-    enlarged to meet it honestly rather than the floor being lowered to meet the sample.
+    The game count is 60,000 per deck and the floor is 3 million transitions. Both numbers were much
+    larger for a while and both were wrong for different reasons, which is worth recording because the
+    history is the argument for what they are now.
 
-    The claim remains a sample and not a proof: it shows the invariant survived a large number of
-    transitions of varied play, which is why it is stated as a floor (``> 15 million``).
+    Originally 5,000 games against a floor of 15 million transitions. That was calibrated while
+    `AUTO_DEFEND` still stalled: about 5% of its games ran to the 10,000-round cap, so a handful of
+    pathological games supplied most of the count and tested nothing the short games do not. The sample
+    was then raised to 300,000 games to meet the floor honestly -- which was fixing the arithmetic while
+    leaving the real problem in place, because the pathological games were gone by then and 300,000 short
+    games was just a slow way to check the same thing 60,000 does adequately.
+
+    60,000 games is roughly 3.5 million transitions of ordinary play: enough that a violation with a
+    non-trivial rate would be caught, and short enough that the suite stays runnable. This is a smoke
+    check on the invariants, NOT the project's correctness guarantee -- that is
+    `tests/test_equivalence.py`, which compares compiled against interpreted execution bit for bit.
+    Anyone who wants a bigger sample should raise this deliberately, not inherit it.
+
+    The claim remains a sample and not a proof: it shows the invariant survived several million
+    transitions of varied play, which is why it is stated as a floor (``> 3 million``).
     """
-    outcomes = autoplay(deck_size, games=300_000, seed=7, strategy_p0=AUTO_ATTACK,
+    outcomes = autoplay(deck_size, games=60_000, seed=7, strategy_p0=AUTO_ATTACK,
                         strategy_p1=AUTO_DEFEND)
 
     assert not outcomes["flag_card_conservation_violation"].any()
@@ -189,7 +198,7 @@ def test_invariants_hold_after_every_transition_at_scale(deck_size):
     assert not outcomes["flag_illegal_move"].any()
 
     transitions = int(outcomes["actions"].sum())
-    assert transitions > 15_000_000, (
+    assert transitions > 3_000_000, (
         f"only {transitions} transitions were checked, which is too few for the claim to mean "
         f"anything"
     )
