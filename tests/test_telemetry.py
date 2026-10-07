@@ -135,19 +135,26 @@ def test_engine_dtypes_match_the_arrow_schemas():
     Two hand-written descriptions of the same table is a defect waiting to happen: the engine
     writes NumPy arrays and the writer publishes Arrow, so a divergence here would produce a
     file whose schema does not match the rows in it.
+
+    One column is written by neither: `first_attacker_regime` is added by the runner, because the
+    regime is a string and `njit` cannot write a string into a structured row. It is named here so
+    that a second runner-stamped column has to be added to this list too -- a silently growing set of
+    columns that no writer owns is how a schema drifts from its data.
     """
+    runner_stamped = {"first_attacker_regime"}
+
     for numpy_dtype, schema_fn in (
         (GAME_DTYPE, level1_schema), (ROUND_DTYPE, level2_schema), (MOVE_DTYPE, level3_schema),
     ):
         schema = schema_fn()
+        only_in_schema = set(schema.names) - set(numpy_dtype.names)
 
         assert set(numpy_dtype.names) - set(schema.names) == set(), (
             f"the engine writes columns the schema omits: "
             f"{sorted(set(numpy_dtype.names) - set(schema.names))}"
         )
-        assert set(schema.names) - set(numpy_dtype.names) == set(), (
-            f"the schema declares columns the engine never writes: "
-            f"{sorted(set(schema.names) - set(numpy_dtype.names))}"
+        assert only_in_schema == (runner_stamped if schema_fn is level1_schema else set()), (
+            f"the schema declares columns nobody writes: {sorted(only_in_schema)}"
         )
 
 

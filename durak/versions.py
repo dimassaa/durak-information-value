@@ -19,4 +19,6 @@ ENGINE_VERSION = 2
 # card back and forth indefinitely and 16-21% of games per arm hit the round cap. Any dataset produced
 # under version 1 contains that bias and must not be pooled with anything produced after this bump.
 RULES_VERSION = 2
-SCHEMA_VERSION = 1
+# 2: level-1 rows gained `pairing_index` and `first_attacker_regime`. Both were absent, so a dataset
+# carrying several regimes could not be read by regime at all. Pre-fix datasets lack the columns.
+SCHEMA_VERSION = 2

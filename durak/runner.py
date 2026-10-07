@@ -42,7 +42,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +56,7 @@ from durak import rules
 from durak.audit import audit_outcomes
 from durak.config import Settings
 from durak.engine import play_block
+from durak.tournament import game_block_ranges
 from durak.rules import (
     EARLY_FRACTION,
     LATE_FRACTION,
@@ -296,22 +299,143 @@ class RunSummary:
 
 
 def _write_levels(outcomes, rounds, moves, out_dir: Path, level: int, schema_version: int):
-    write_parquet(outcomes, out_dir, schema_version=schema_version, level=1)
+    """Write one run's three telemetry levels under `out_dir`.
+
+    `out_dir` is the run root, and each level gets its own subdirectory. The levels used to nest --
+    level 2 and 3 written under `games/` -- which put round and move rows inside the level-1 directory,
+    so `read_parquet(out_dir / "games")` returned 1,061 rows where 48 games existed. `read_parquet`
+    deliberately reads every `*.parquet` under a path recursively, so nesting levels is silently
+    incompatible with reading one level. `analysis/schema.sql` globs each level's own directory, which
+    only works once the levels are siblings.
+    """
+    write_parquet(outcomes, out_dir / "games", schema_version=schema_version, level=1)
     if rounds.size:
         write_parquet(rounds, out_dir / "rounds", schema_version=schema_version, level=2)
     if moves.size:
         write_parquet(moves, out_dir / "moves", schema_version=schema_version, level=3)
 
 
+@dataclass(frozen=True)
+class _BlockJob:
+    """One unit of work: a contiguous range of games within one grid cell.
+
+    Picklable by construction -- every field is a plain scalar or tuple -- which is what lets a block
+    run in a worker process. Carries no output paths: the worker returns arrays, and the parent decides
+    where they land, so a worker cannot write into the dataset layout it does not own.
+    """
+
+    pairing_index: int
+    deck_size: int
+    strategy_p0: int
+    strategy_p1: int
+    info_p0: int
+    info_p1: int
+    regime: str
+    seed: int
+    game_start: int
+    game_count: int
+    sample_modulus: int
+
+
+def _run_block(job: _BlockJob, tunables, record_rounds: bool, record_moves: bool):
+    """Play one block and return `(outcomes, rounds, moves)`.
+
+    Module level, so a `ProcessPoolExecutor` can pickle it by reference. `tunables` is passed by the
+    parent rather than reconstructed in the child: a `RuleTunables` rebuilt from defaults would be a
+    different rule set whenever the manifest was not the default one, and the dataset would silently
+    claim a configuration it did not use.
+    """
+    override = first_attacker_override(job.regime, job.game_start)
+    if job.regime == RULE_DERIVED:
+        return play_block(
+            job.deck_size, job.strategy_p0, job.strategy_p1, job.info_p0, job.info_p1,
+            job.seed, job.pairing_index, job.game_start, job.game_count, tunables,
+            record_rounds, record_moves, run_id=0, sample_modulus=job.sample_modulus,
+            first_attacker_override=override,
+        )
+
+    # ROTATION_BALANCED alternates on the ABSOLUTE game index, so the override differs within a block
+    # and the block must be played one game at a time. `play_block` with a constant override would give
+    # every game in the block the same seat, which quietly turns the balanced regime into a
+    # single-seat regime.
+    outcomes, rounds, moves = [], [], []
+    for offset in range(job.game_count):
+        one, r, m = play_block(
+            job.deck_size, job.strategy_p0, job.strategy_p1, job.info_p0, job.info_p1,
+            job.seed, job.pairing_index, job.game_start + offset, 1, tunables,
+            record_rounds, record_moves, run_id=0, sample_modulus=job.sample_modulus,
+            first_attacker_override=first_attacker_override(job.regime, job.game_start + offset),
+        )
+        outcomes.append(one)
+        if r.size:
+            rounds.append(r)
+        if m.size:
+            moves.append(m)
+
+    round_dtype = rounds[0].dtype if rounds else _round_dtype()
+    move_dtype = moves[0].dtype if moves else _move_dtype()
+    return (np.concatenate(outcomes),
+            np.concatenate(rounds) if rounds else np.zeros(0, dtype=round_dtype),
+            np.concatenate(moves) if moves else np.zeros(0, dtype=move_dtype))
+
+
+def _stamp_regime(outcomes, grid):
+    """Add `first_attacker_regime` to level-1 rows, derived from their `pairing_index`.
+
+    Added here rather than in the engine because the regime is a string and `njit` cannot write one
+    into a structured row. Deriving it from `pairing_index` rather than carrying it through the call is
+    what keeps the compiled loop untouched -- and `pairing_index` is a bijection onto the grid cells, so
+    the derivation is exact rather than a lookup that could miss.
+
+    Without this column a dataset holding both regimes is unreadable: nothing distinguishes a
+    `RULE_DERIVED` game from a `ROTATION_BALANCED` one except its seat sequence, and a phase comparison
+    across regimes silently mixes them. Schema version 2.
+    """
+    names = list(outcomes.dtype.names)
+    if "first_attacker_regime" in names:
+        return outcomes
+
+    by_index = {p.pairing_index: p.first_attacker_regime for p in grid}
+    regime_dtype = np.dtype([("first_attacker_regime", "U32")])
+    regimes = np.zeros(len(outcomes), dtype=regime_dtype)
+    for i in range(len(outcomes)):
+        index = int(outcomes["pairing_index"][i])
+        regimes["first_attacker_regime"][i] = by_index.get(index, "UNKNOWN")
+
+    combined = np.dtype(outcomes.dtype.descr + [("first_attacker_regime", "U32")])
+    merged = np.empty(len(outcomes), dtype=combined)
+    for name in names:
+        merged[name] = outcomes[name]
+    merged["first_attacker_regime"] = regimes["first_attacker_regime"]
+    return merged
+
+
+def _resolve_workers(workers: int) -> int:
+    """`0` means "decide at runtime", mirroring the manifest's convention, and is not zero workers."""
+    if workers < 0:
+        raise ValueError(f"workers must be non-negative, got {workers}")
+    if workers == 0:
+        return max(1, os.cpu_count() or 1)
+    return workers
+
+
 def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
                    record_rounds: bool = True, record_moves: bool = True) -> RunSummary:
     """Play every cell of the grid and write the dataset.
 
-    `workers` is accepted and validated, and runs serially for now; Task 15 gives it teeth. The
-    result must not depend on it either way, which is what makes the parallel port safe to attempt.
+    `workers` selects a process pool over whole blocks. It does not change the dataset, and that is not
+    a hope but a property of the decomposition: a job is `(pairing_index, game_start, game_count)` and a
+    game's seed is derived from `(run_seed, pairing_index, game_index)` and nothing else, so a block
+    plays the same games on any worker in any order. The pool returns arrays to the parent, which
+    concatenates them in grid-then-block order, so even the row order is fixed.
 
-    Blocks are cut by `game_index` and nothing else, so the same run at any block size produces the
-    same games. That is asserted in the tests and is the property the `prange` port must preserve.
+    Why processes and not `prange`
+    ------------------------------
+    `numba` 0.68 does not lower writes into a structured array inside a parallel loop, and the engine's
+    telemetry is structured arrays written from inside the game loop (21 such writes in `_play_one`).
+    Parallelism is therefore taken one level up rather than by redesigning the telemetry layout: blocks
+    stay independent, and each writes its own Parquet partition, so there is no shared mutable state for
+    a race to corrupt.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -335,54 +459,49 @@ def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
     all_rounds = []
     all_moves = []
 
+    # One job per block, in grid order then block order. The order is the row order of the finished
+    # dataset, so a pool that completes blocks out of order still concatenates deterministically.
+    jobs = []
     for pairing in grid:
-        override = None  # resolved per game below
-        for start in range(0, manifest.games_per_pairing, manifest.block_size):
-            count = min(manifest.block_size, manifest.games_per_pairing - start)
+        info_p0, info_p1 = info_modes_for(pairing)
+        for start, stop in game_block_ranges(manifest.games_per_pairing, manifest.block_size):
+            jobs.append(_BlockJob(
+                pairing_index=pairing.pairing_index, deck_size=pairing.deck_size,
+                strategy_p0=pairing.strategy_p0, strategy_p1=pairing.strategy_p1,
+                info_p0=int(info_p0), info_p1=int(info_p1),
+                regime=pairing.first_attacker_regime, seed=manifest.seed,
+                game_start=start, game_count=stop - start,
+                sample_modulus=manifest.settings.sample_modulus,
+            ))
 
-            if pairing.first_attacker_regime == ROTATION_BALANCED:
-                # The rotation alternates on the absolute game index, so a block must apply it
-                # game by game rather than once for the whole block.
-                block_outcomes = []
-                block_rounds = []
-                block_moves = []
-                for offset in range(count):
-                    game_index = start + offset
-                    one, rounds, moves = play_block(
-                        pairing.deck_size, pairing.strategy_p0, pairing.strategy_p1,
-                        *info_modes_for(pairing), manifest.seed, pairing.pairing_index,
-                        game_index, 1, tunables, record_rounds, record_moves,
-                        run_id=0, sample_modulus=manifest.settings.sample_modulus,
-                        first_attacker_override=first_attacker_override(
-                            pairing.first_attacker_regime, game_index),
-                    )
-                    block_outcomes.append(one)
-                    if rounds.size:
-                        block_rounds.append(rounds)
-                    if moves.size:
-                        block_moves.append(moves)
-                outcomes = np.concatenate(block_outcomes)
-                rounds = (np.concatenate(block_rounds) if block_rounds
-                          else np.zeros(0, dtype=rounds.dtype if hasattr(rounds, "dtype")
-                                         else np.dtype([])))
-                moves = (np.concatenate(block_moves) if block_moves
-                         else np.zeros(0, dtype=moves.dtype if hasattr(moves, "dtype")
-                                        else np.dtype([])))
-            else:
-                outcomes, rounds, moves = play_block(
-                    pairing.deck_size, pairing.strategy_p0, pairing.strategy_p1,
-                    *info_modes_for(pairing), manifest.seed, pairing.pairing_index,
-                    start, count, tunables, record_rounds, record_moves,
-                    run_id=0, sample_modulus=manifest.settings.sample_modulus,
-                    first_attacker_override=first_attacker_override(
-                        pairing.first_attacker_regime, start),
-                )
+    all_outcomes = []
+    all_rounds = []
+    all_moves = []
 
-            all_outcomes.append(outcomes)
-            if rounds.size:
-                all_rounds.append(rounds)
-            if moves.size:
-                all_moves.append(moves)
+    if not jobs:
+        (out_dir / "manifest.json").write_text(manifest.to_json() + "\n", encoding="utf-8")
+        return RunSummary(games=0, wins={}, anomalies=0, audit={"games": 0, "clean": True},
+                          elapsed_seconds=time.perf_counter() - started)
+
+    worker_count = _resolve_workers(workers)
+    if worker_count == 1 or len(jobs) == 1:
+        # Serial on purpose for one worker: a pool of one pays process startup and pickling for no
+        # parallelism, and this is the path the tests and every interactive run take.
+        results = [_run_block(job, tunables, record_rounds, record_moves) for job in jobs]
+    else:
+        with ProcessPoolExecutor(max_workers=worker_count) as pool:
+            futures = [pool.submit(_run_block, job, tunables, record_rounds, record_moves)
+                       for job in jobs]
+            # Collected by index, not by completion: `as_completed` would make the row order depend on
+            # which worker happened to finish first, and the dataset must not depend on scheduling.
+            results = [f.result() for f in futures]
+
+    for outcomes, rounds, moves in results:
+        all_outcomes.append(outcomes)
+        if rounds.size:
+            all_rounds.append(rounds)
+        if moves.size:
+            all_moves.append(moves)
 
     if not all_outcomes:
         (out_dir / "manifest.json").write_text(manifest.to_json() + "\n", encoding="utf-8")
@@ -399,13 +518,16 @@ def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
         if column in outcomes.dtype.names:
             outcomes[column] = 0
 
-    _write_levels(outcomes, rounds, moves, out_dir / "games", 1, manifest.schema_version)
-    if rounds.size:
-        write_parquet(rounds, out_dir / "rounds", schema_version=manifest.schema_version, level=2)
-    if moves.size:
-        write_parquet(moves, out_dir / "moves", schema_version=manifest.schema_version, level=3)
+    outcomes = _stamp_regime(outcomes, grid)
+
+    _write_levels(outcomes, rounds, moves, out_dir, 1, manifest.schema_version)
 
     (out_dir / "manifest.json").write_text(manifest.to_json() + "\n", encoding="utf-8")
+    # A different document under a different name. `write_manifest` inventories the dataset as written
+    # (partitions, observed columns, versions), and it used to be called on `out_dir / "games"` so the two
+    # never collided. Writing it to `out_dir` alongside the run manifest overwrote `manifest.json` with
+    # the inventory -- which has no `run_id`, so the reproducibility contract was destroyed by the very
+    # call meant to describe the data.
     write_manifest(out_dir / "games")
 
     audit = audit_outcomes(outcomes)

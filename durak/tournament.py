@@ -126,6 +126,27 @@ def pairing_grid(strategy_ids, deck_sizes=(36,), both_directions: bool = True,
     ]
 
 
+def game_block_ranges(game_count: int, block_size: int):
+    """`(start, stop)` ranges partitioning `[0, game_count)` into blocks of at most `block_size`.
+
+    The unit of parallelism. A block is identified by its `game_start` alone, because a game's seed is
+    derived from the absolute game index -- so the same range means the same games no matter which worker
+    runs it, in which order, or after a resume. That is what makes a 1-worker run equal an 8-worker run,
+    and it is asserted in `tests/test_determinism.py` over several worker counts and block sizes.
+
+    The last block is short rather than padded: padding would play games the manifest did not ask for and
+    would have to be trimmed back out, which is the kind of round trip that loses rows.
+    """
+    if block_size < 1:
+        raise ValueError(f"block_size must be at least 1, got {block_size}")
+    if game_count < 0:
+        raise ValueError(f"game_count must be non-negative, got {game_count}")
+    if game_count == 0:
+        return []
+    return [(start, min(start + block_size, game_count))
+            for start in range(0, game_count, block_size)]
+
+
 def game_seeds(run_seed: int, pairing_index: int, game_count: int) -> np.ndarray:
     """The `int64` seeds for `game_count` games of one pairing.
 

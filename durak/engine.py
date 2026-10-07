@@ -136,6 +136,12 @@ def _build_game_dtype():
         ("engine_version", "i4"), ("rules_version", "i4"), ("schema_version", "i4"),
         # deal and rules
         ("first_attacker", "i4"), ("both_have_trumps", "?"),
+        # Which grid cell produced this game. This column was MISSING and is the reason schema version 2
+        # exists: one manifest can carry several regimes, so a dataset held both and nothing on the row
+        # said which cell or which regime it came from -- leaving any regime comparison impossible from
+        # the data alone. `first_attacker_regime` is a string and is added by the runner from this
+        # column, because `njit` cannot write a string into a row.
+        ("pairing_index", "i4"),
         ("initial_trumps_p0", "i4"), ("initial_trumps_p1", "i4"),
         ("redeals", "i4"), ("first_attacker_random_fallback", "?"),
         # outcome
@@ -327,6 +333,7 @@ def _play_one(outcomes, row_index, rounds, moves, rounds_start, moves_start, run
     row["winner"] = NO_WINNER
     row["winner_rounds_played"] = -1
     row["first_attacker"] = state.attacker
+    row["pairing_index"] = pairing_index
     row["both_have_trumps"] = state.both_have_trumps
     row["initial_trumps_p0"] = trumps_in_hand(state, 0)
     row["initial_trumps_p1"] = trumps_in_hand(state, 1)

@@ -62,6 +62,10 @@ def level1_schema() -> pa.Schema:
         pa.field("info_mode_p0", pa.int32()), pa.field("info_mode_p1", pa.int32()),
         pa.field("engine_version", pa.int32()), pa.field("rules_version", pa.int32()),
         pa.field("schema_version", pa.int32()),
+        # Which grid cell, and under which first-attacker regime. Added in schema version 2: one
+        # manifest can carry several regimes, and without these a dataset holding both could not be
+        # read by regime at all -- nothing distinguished the two except the seat sequence.
+        pa.field("pairing_index", pa.int32()), pa.field("first_attacker_regime", pa.string()),
         # deal and rules
         pa.field("first_attacker", pa.int32()), pa.field("both_have_trumps", pa.bool_()),
         pa.field("initial_trumps_p0", pa.int32()), pa.field("initial_trumps_p1", pa.int32()),
@@ -143,6 +147,14 @@ def level3_schema() -> pa.Schema:
 LEVEL_SCHEMAS = {1: level1_schema, 2: level2_schema, 3: level3_schema}
 
 
+#: Level-1 columns the *runner* adds rather than the engine. `njit` cannot write a string into a
+#: structured row, so `first_attacker_regime` is stamped from `pairing_index` after the games are played.
+#: A raw engine array therefore legitimately lacks it, and these columns are filled with a stated default
+#: instead of raising -- but only these, and only when genuinely absent, so a schema naming a column
+#: nothing writes is still an error.
+RUNNER_STAMPED_COLUMNS = {"first_attacker_regime": "UNSTAMPED"}
+
+
 def to_table(records: np.ndarray, schema: pa.Schema) -> pa.Table:
     """Convert a NumPy record array into an Arrow table under `schema`.
 
@@ -156,7 +168,15 @@ def to_table(records: np.ndarray, schema: pa.Schema) -> pa.Table:
 
     columns = []
     for field in schema:
-        values = records[field.name]
+        if field.name in records.dtype.names:
+            values = records[field.name]
+        elif field.name in RUNNER_STAMPED_COLUMNS:
+            # Written by the runner, not the engine. Filling with a named placeholder keeps the column's
+            # presence visible: a dataset of "UNSTAMPED" is obviously not a published one, whereas a
+            # silently dropped column would look identical to a regime nobody ran.
+            values = np.full(len(records), RUNNER_STAMPED_COLUMNS[field.name], dtype="U32")
+        else:
+            raise ValueError(f"no field of name {field.name}")
         columns.append(pa.array(values, type=field.type))
 
     return pa.Table.from_arrays(columns, schema=schema)
