@@ -32,6 +32,7 @@ from durak.runner import RunManifest, run_tournament
 from durak.strategies import AUTO_DEFEND, GREEDY, INFO_PARTICLES, RANDOM, SEARCH_UNIFORM
 from durak.telemetry import read_parquet
 from durak.tournament import RULE_DERIVED, game_block_ranges, pairing_grid
+from durak.versions import ENGINE_VERSION, RULES_VERSION, SCHEMA_VERSION
 
 #: `pairing_grid` emits both seat orders, so a run of two strategies is TWO cells, not one. Every count
 #: below is therefore games_per_pairing * cells, and a test that forgets the factor asserts the wrong
@@ -45,7 +46,8 @@ def _manifest(tmp_path, games=40, block_size=10, strategies=(GREEDY, AUTO_DEFEND
     return RunManifest(
         run_id="d", seed=3, strategies=list(strategies), deck_sizes=[36],
         games_per_pairing=games, regimes=[RULE_DERIVED], settings=Settings(),
-        block_size=block_size, engine_version=2, rules_version=2, schema_version=1,
+        block_size=block_size, engine_version=ENGINE_VERSION, rules_version=RULES_VERSION,
+        schema_version=SCHEMA_VERSION,
     )
 
 
@@ -206,7 +208,7 @@ def test_an_empty_grid_still_raises(tmp_path):
     manifest = RunManifest(
         run_id="e", seed=0, strategies=[GREEDY], deck_sizes=[36], games_per_pairing=4,
         regimes=[RULE_DERIVED], settings=Settings(), block_size=2,
-        engine_version=2, rules_version=2, schema_version=1,
+        engine_version=ENGINE_VERSION, rules_version=RULES_VERSION, schema_version=SCHEMA_VERSION,
     )
     with pytest.raises(ValueError):
         run_tournament(manifest, tmp_path / "empty", workers=2)

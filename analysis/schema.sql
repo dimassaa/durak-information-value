@@ -20,9 +20,14 @@
 -- cannot drift between the four views.
 
 -- The version triple every view is filtered to. Change here, not in the queries.
+--
+-- These MUST equal `durak.versions`. A stale value does not fail loudly: every view returns zero rows,
+-- a report shows empty figures, and the cause is three lines away from the number that went stale.
+-- The drift that bit this file once -- schema version 2 added columns while the filter still said 1 --
+-- is why the macros exist as named constants rather than as literals sprinkled through the queries.
 CREATE OR REPLACE MACRO current_engine_version() AS 2;
 CREATE OR REPLACE MACRO current_rules_version() AS 2;
-CREATE OR REPLACE MACRO current_schema_version() AS 1;
+CREATE OR REPLACE MACRO current_schema_version() AS 2;
 
 -- Where the dataset lives: `SET VARIABLE dataset_root = '/path/to/run';` before reading this file.
 -- A macro over the variable rather than a literal, so pointing the views at another run is one command
