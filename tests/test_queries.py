@@ -48,32 +48,39 @@ def _synthetic_dataset(tmp_path, wins_p0=60, total=100, flags=0, opponent="RANDO
     # builds the published shape directly rather than going through the engine, and so must carry the
     # column itself.
     base = GAME_DTYPE
+    # HEAD TO HEAD: the two arms play each other in both seat orders. A field-wide fixture would let
+    # the primary metric pass by averaging over unrelated opponents, which is the bug this shape exists
+    # to prevent -- the field-wide version read +0.012 where the head-to-head reads +0.070.
     records = np.zeros(2 * total, dtype=np.dtype(base.descr + [("first_attacker_regime", "U32")]))
     opponent_id = 2 if opponent == "RANDOM" else 3
-    for arm, strategy in ((SEARCH_UNIFORM, 5), (SEARCH_INFORMED, 6)):
+    order = ((SEARCH_UNIFORM, SEARCH_INFORMED), (SEARCH_INFORMED, SEARCH_UNIFORM))
+    for arm, (strategy, other) in enumerate(order):
         for i in range(total):
-            row = i if strategy == SEARCH_UNIFORM else total + i
-            won = i < wins_p0
+            row = arm * total + i
+            # `informed_won` is a property of the ARM, not of the seat, so it is resolved to a seat
+            # here: informed wins in seat 1 (winner = 1) and in seat 0 (winner = 0) equally often.
+            informed_won = i < wins_p0
+            won = informed_won
             records[row]["run_id"] = 0
             records[row]["game_index"] = i
             records[row]["game_seed"] = 1000 + i
             records[row]["deck_size"] = 36
             records[row]["strategy_p0"] = strategy
-            records[row]["strategy_p1"] = opponent_id
+            records[row]["strategy_p1"] = other if opponent == "RANDOM" else opponent_id
             records[row]["info_mode_p0"] = 1 if strategy == SEARCH_INFORMED else 0
             records[row]["info_mode_p1"] = 0
             records[row]["engine_version"] = ENGINE_VERSION
             records[row]["rules_version"] = RULES_VERSION
             records[row]["schema_version"] = SCHEMA_VERSION
             records[row]["first_attacker"] = i % 2
-            records[row]["winner"] = 0 if won else 1
+            records[row]["winner"] = (1 if arm == 0 else 0) if informed_won else (0 if arm == 0 else 1)
             records[row]["rounds"] = 30
             records[row]["actions"] = 80
             records[row]["final_hand_p0"] = 0 if won else 3
             records[row]["final_hand_p1"] = 3 if won else 0
             records[row]["deck_remaining_at_end"] = 4
             records[row]["first_attacker_regime"] = "RULE_DERIVED"
-            records[row]["pairing_index"] = 0
+            records[row]["pairing_index"] = arm
             records[row]["both_have_trumps"] = True
             records[row]["flag_redeals_exceeded"] = False
             records[row]["winner_rounds_played"] = 30
@@ -93,13 +100,17 @@ def _synthetic_dataset(tmp_path, wins_p0=60, total=100, flags=0, opponent="RANDO
 
 
 def test_price_of_information_reports_a_known_rate_with_the_matching_interval(tmp_path):
-    """60 of 100 wins must come out as 0.6 and carry exactly `wilson_interval(60, 100)`."""
+    """120 of 200 head-to-head games won must come out as 0.6 with exactly `wilson_interval(120, 200)`.
+
+    The head-to-head is the whole point: 60 wins per seat order, 120 in total. A field-wide metric would
+    answer a different question and would have hidden the bug this test now pins.
+    """
     root = _synthetic_dataset(tmp_path, wins_p0=60, total=100)
     result = price_of_information(root)
 
-    assert result["informed"]["n"] == 100
+    assert result["informed"]["n"] == 200
     assert result["informed"]["win_rate"] == pytest.approx(0.6, abs=1e-12)
-    assert result["informed"]["ci"] == pytest.approx(wilson_interval(60, 100), abs=1e-12)
+    assert result["informed"]["ci"] == pytest.approx(wilson_interval(120, 200), abs=1e-12)
 
 
 def test_price_of_information_carries_its_paired_tests(tmp_path):
@@ -117,7 +128,7 @@ def test_the_interval_is_not_rounded_before_it_is_serialised(tmp_path):
     """The published interval must be the function's, not a 4-digit rendering of it."""
     root = _synthetic_dataset(tmp_path, wins_p0=60, total=100)
     result = price_of_information(root)
-    expected = wilson_interval(60, 100)
+    expected = wilson_interval(120, 200)
     assert result["informed"]["ci"][0] == pytest.approx(expected[0], abs=0.0)
     assert result["informed"]["ci"][1] == pytest.approx(expected[1], abs=0.0)
 
@@ -126,8 +137,8 @@ def test_an_undecided_game_leaves_the_denominator(tmp_path):
     """`winner = -1` has no outcome. Counting it as a loss would invent a result."""
     root = _synthetic_dataset(tmp_path, wins_p0=60, total=100, flags=5)
     result = price_of_information(root)
-    assert result["informed"]["n"] == 95, "undecided games must not enter the denominator"
-    # Five per arm, and the flag is applied to both arms' copy of each flagged game, so ten in all.
+    assert result["informed"]["n"] == 190, "undecided games must not enter the denominator"
+    # Five flagged indices per seat order, ten rows in all.
     assert result["undecided_games"] == 10
 
 
@@ -155,10 +166,11 @@ def test_tournament_overview_lists_every_strategy_with_a_rate(tmp_path):
     root = _synthetic_dataset(tmp_path)
     overview = tournament_overview(root)
     ids = {row["strategy_id"] for row in overview["rows"]}
-    assert ids == {2, 5, 6}   # both arms plus RANDOM
+    assert ids == {5, 6}, "the head-to-head fixture contains only the two arms"
     row = next(r for r in overview["rows"] if r["strategy_id"] == 5)
-    assert row["win_rate"] == pytest.approx(0.6, abs=1e-12)
-    assert row["n"] == 100, "each strategy played 100 games as strategy_p0"
+    # The informed arm wins 60 of 100 in each seat order, so the uninformed arm wins 40 of 200 overall.
+    assert row["win_rate"] == pytest.approx(0.4, abs=1e-12)
+    assert row["n"] == 200, "the arm plays every game in the head-to-head, in both seats"
 
 
 def test_opponent_independent_strength_uses_only_random_opponents(tmp_path):

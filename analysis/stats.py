@@ -80,14 +80,16 @@ def mcnemar_exact(b: int, c: int) -> float:
     if n == 0:
         return 1.0
 
-    # Binomial coefficients by recurrence, so no factorial overflows at large n and no table is built.
-    tail = 0.0
-    coefficient = 1.0
-    for k in range(0, min(b, c) + 1):
-        if k > 0:
-            coefficient = coefficient * (n - k + 1) / k
-        tail += coefficient
-    tail /= 2.0 ** n
+    # The tail is summed in log space. The obvious form, `sum(C(n,k)) / 2**n`, raises OverflowError once
+    # n passes about 1023 -- which a 20,000-game cell passes comfortably, so the exact test died on the
+    # very dataset it exists to judge. `lgamma` gives the log pmf directly; the max is subtracted before
+    # exponentiating so nothing overflows on the way back.
+    logs = [
+        math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1) - n * math.log(2.0)
+        for k in range(min(b, c) + 1)
+    ]
+    top = max(logs)
+    tail = math.exp(top) * sum(math.exp(x - top) for x in logs)
     return min(1.0, 2.0 * tail)
 
 

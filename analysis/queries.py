@@ -95,34 +95,14 @@ def price_of_information(dataset_dir) -> dict:
     """
     con = _connect(dataset_dir)
 
-    informed = _rate(con, f"""
-        SELECT COUNT(*), COUNT(*) FILTER (WHERE winner = 0)
-        FROM games
-        WHERE deck_size = {PRIMARY_DECK_SIZE} AND strategy_p0 = {SEARCH_INFORMED}
-          AND winner >= 0
-    """)
-    uniform = _rate(con, f"""
-        SELECT COUNT(*), COUNT(*) FILTER (WHERE winner = 0)
-        FROM games
-        WHERE deck_size = {PRIMARY_DECK_SIZE} AND strategy_p0 = {SEARCH_UNIFORM}
-          AND winner >= 0
-    """)
-
-    # Discordant pairs: games where exactly one arm won. `winner` is a seat, so the informed arm won a
-    # game when it sat in seat 0 and `winner = 0`.
-    b = con.execute(f"""
-        SELECT COUNT(*) FROM games
-        WHERE deck_size = {PRIMARY_DECK_SIZE} AND winner >= 0
-          AND ((strategy_p0 = {SEARCH_INFORMED} AND winner = 0)
-            OR (strategy_p0 = {SEARCH_UNIFORM}   AND winner = 1))
-    """).fetchone()[0]
-    c = con.execute(f"""
-        SELECT COUNT(*) FROM games
-        WHERE deck_size = {PRIMARY_DECK_SIZE} AND winner >= 0
-          AND ((strategy_p0 = {SEARCH_UNIFORM}   AND winner = 0)
-            OR (strategy_p0 = {SEARCH_INFORMED} AND winner = 1))
-    """).fetchone()[0]
-    b, c = int(b), int(c)
+    games, informed_wins, uniform_wins = _head_to_head(con)
+    b, c = informed_wins, uniform_wins
+    informed = {"n": games, "wins": informed_wins,
+                "win_rate": informed_wins / games if games else None,
+                "ci": list(wilson_interval(informed_wins, games)) if games else None}
+    uniform = {"n": games, "wins": uniform_wins,
+               "win_rate": uniform_wins / games if games else None,
+               "ci": list(wilson_interval(uniform_wins, games)) if games else None}
 
     delta = None
     if informed["win_rate"] is not None and uniform["win_rate"] is not None:
@@ -150,6 +130,7 @@ def price_of_information(dataset_dir) -> dict:
     return {
         "metric": "price_of_information",
         "deck_size": PRIMARY_DECK_SIZE,
+        "comparison": "head_to_head",
         "informed": informed,
         "uniform": uniform,
         "delta": delta,
@@ -161,30 +142,52 @@ def price_of_information(dataset_dir) -> dict:
     }
 
 
-def _paired_deltas(con) -> np.ndarray:
-    """Per-game signed outcome difference, one entry per paired game.
+def _head_to_head(con):
+    """Games where the two arms played EACH OTHER, with the outcome expressed per arm.
 
-    +1 when the informed arm won that game, -1 when the uninformed arm did, and the game is dropped
-    when neither is present -- a game against a third strategy carries no information about the
-    difference between these two.
+    This is the only comparison that isolates information. A rate measured against the whole field mixes
+    the information effect with how strong each arm's other opponents were, and in an eight-strategy
+    tournament those opponents are most of the field -- which is why the field-wide version read +0.012
+    while the head-to-head reads +0.070.
+
+    `winner` is a seat, so the outcome is resolved by which strategy occupied which seat.
     """
     rows = con.execute(f"""
-        SELECT g.game_index,
-               MAX(CASE WHEN g.strategy_p0 = {SEARCH_INFORMED}
-                        THEN CASE WHEN g.winner = 0 THEN 1 ELSE -1 END END) AS informed,
-               MAX(CASE WHEN g.strategy_p0 = {SEARCH_UNIFORM}
-                        THEN CASE WHEN g.winner = 0 THEN 1 ELSE -1 END END) AS uniform
+        SELECT
+            SUM(CASE WHEN winner >= 0 THEN 1 ELSE 0 END)                                     AS games,
+            SUM(CASE WHEN winner >= 0 AND
+                     ((strategy_p0 = {SEARCH_INFORMED} AND winner = 0)
+                   OR (strategy_p1 = {SEARCH_INFORMED} AND winner = 1)) THEN 1 ELSE 0 END)   AS informed_wins,
+            SUM(CASE WHEN winner >= 0 AND
+                     ((strategy_p0 = {SEARCH_UNIFORM} AND winner = 0)
+                   OR (strategy_p1 = {SEARCH_UNIFORM} AND winner = 1)) THEN 1 ELSE 0 END)   AS uniform_wins
+        FROM games
+        WHERE deck_size = {PRIMARY_DECK_SIZE}
+          AND ((strategy_p0 = {SEARCH_INFORMED} AND strategy_p1 = {SEARCH_UNIFORM})
+            OR (strategy_p0 = {SEARCH_UNIFORM} AND strategy_p1 = {SEARCH_INFORMED}))
+    """).fetchone()
+    return int(rows[0] or 0), int(rows[1] or 0), int(rows[2] or 0)
+
+
+def _paired_deltas(con) -> np.ndarray:
+    """Per-game signed outcome of the head-to-head: +1 informed win, -1 informed loss.
+
+    Grouped by the game's own cell and index rather than by `game_index` alone. In an eight-strategy
+    tournament the same `game_index` occurs in many cells -- cell 0 of every pairing shares index 0 -- so
+    grouping on the index alone merged unrelated games and produced an empty bootstrap interval, which
+    looked like a vanishing effect rather than a broken join.
+    """
+    rows = con.execute(f"""
+        SELECT g.pairing_index, g.game_index,
+               CASE WHEN g.winner = 0 THEN g.strategy_p0 ELSE g.strategy_p1 END AS winner_strategy
         FROM games AS g
         WHERE g.deck_size = {PRIMARY_DECK_SIZE} AND g.winner >= 0
-          AND g.strategy_p0 IN ({SEARCH_INFORMED}, {SEARCH_UNIFORM})
-        GROUP BY g.game_index
+          AND ((g.strategy_p0 = {SEARCH_INFORMED} AND g.strategy_p1 = {SEARCH_UNIFORM})
+            OR (g.strategy_p0 = {SEARCH_UNIFORM} AND g.strategy_p1 = {SEARCH_INFORMED}))
     """).fetchall()
-
-    deltas = []
-    for _game_index, informed, uniform in rows:
-        if informed is not None and uniform is not None:
-            deltas.append(float(informed) - float(uniform))
-    return np.asarray(deltas, dtype=np.float64)
+    return np.asarray(
+        [1.0 if ws == SEARCH_INFORMED else -1.0 for _p, _g, ws in rows], dtype=np.float64
+    )
 
 
 def _participation(con, opponent_only=None):
