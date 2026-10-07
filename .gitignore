@@ -29,3 +29,5 @@ data/
 #   reports/out/*.html        committed dashboards
 #   reports/out/figures/*.png committed figures for the README
 #   IMPROVEMENTS.md           tracked backlog, never ignored
+# Datasets are large and reproducible from a seed, so they are kept locally and never committed.
+datasets/
