@@ -798,3 +798,37 @@ Task 17: THE REPORTED BLOCKER WAS MY OWN MISREADING, corrected. I reported that 
   is smaller than the noise: +0.0297 at 2,000 games in the first pass, and -0.1375 at 40 games in the
   three-strategy run. Neither is usable. The arms differ in play but the win-rate difference has not been
   shown to be non-zero, and Task 18's scale is what settles it.
+
+Task 17: THE HEADLINE RESULT, measured head to head. Play the two arms against EACH OTHER on matched
+  deals, 400 games per seat order on the 36-card deck:
+
+    uniform vs informed, winner = 0 (uniform)   172
+    uniform vs informed, winner = 1 (INFORMED)  228
+    informed vs uniform, winner = 0 (INFORMED)  228
+    informed vs uniform, winner = 1 (uniform)   172
+
+  INFORMED 456 / 800 = 0.5700, Wilson (0.5354, 0.6039), McNemar exact p = 8.5e-05.
+
+  So perfect knowledge of the opponent's hand IS worth about seven percentage points when the opponent
+  is the search itself. That is a real, significant, large effect -- and it is the opposite of what the
+  RANDOM-opponent runs suggested (+0.030 at 2,000 games, i.e. indistinguishable from zero).
+
+  THE RESOLUTION, and it is the interesting part: information is worth a lot against an opponent who can
+  use it and worth almost nothing against RANDOM. The uninformed agent's ignorance costs it nothing when
+  the opponent takes cards at random regardless, because there is no punishement for being wrong about a
+  hand that plays randomly. A study reporting only the RANDOM-opponent rate would have concluded
+  "information is worthless in Durak" and been wrong.
+
+  This also explains the throw-in anomaly measured just before: the informed arm throws LESS (0.086 vs
+  0.094) and a higher share of its throws is beatable (77.6% vs 68.5%). Read against the head-to-head
+  that is not a failure to use information -- a beatable throw still sheds the attacker's card, and the
+  informed arm is choosing differently for a reason the RANDOM-opponent view cannot expose. It remains
+  unexplained and is worth a look, but it is no longer evidence of a broken lever.
+
+  PROCESS FAILURE, recorded because it happened twice. `winner` is a SEAT and `strategy_p0`/`strategy_p1`
+  are ids; comparing them is always false or always true. I documented this exact trap as
+  IMPROVEMENTS.md #28, fixed it in `analysis/queries.py`, and then reproduced it twice in throwaway
+  probes -- first concluding the arms played identical games, then concluding the informed arm never
+  won. Both conclusions were false and both would have been reported as findings. The lesson is that the
+  seat/strategy distinction needs a type or a helper, not a comment: it has now been violated three
+  times in one session, each time producing a confident wrong answer.
