@@ -20,9 +20,9 @@ import pytest
 import durak.cards
 from durak import rules
 from durak.evaluation import HIGH_RANK
-from durak.actions import ATTACK, BEAT, STOP, THROW, pack_action
+from durak.actions import ATTACK, BEAT, STOP, TAKE, THROW, pack_action  # noqa: F401
 from durak.evaluation import EVAL_WEIGHTS
-from durak.leaf import leaf_profile_after_n, plies_after, reply_cards_in
+from durak.leaf import leaf_profile_after_n, plies_after
 from durak.search import expectimax
 
 W = EVAL_WEIGHTS
@@ -90,18 +90,23 @@ def _first_matching(state, player, kinds_wanted):
 
 # --- OPEN GAP, deliberately left as a comment rather than a failing test ---------------------------
 #
-# Two differential tests are NOT yet written, and a green suite here does not mean they pass:
+# Two differential tests are NOT written, and a green suite here does NOT mean they pass:
 #
 #   1. the FOUR-ply leaf against `rules.apply_action` applied four times. Nothing has ever exercised a
 #      ply count above three, so the loop's refill and role handling at four plies are untested;
-#   2. `plies_after` at nplies == 3 against `rules.legal_actions` in the corresponding state, and above
-#      all the `table_size == 0` branch -- the attacker opening a fresh round after a refill. That branch
-#      did not exist in either written-out enumerator, so a generalisation that omitted it would pass
-#      every depth-1 and depth-2 test in the suite and be wrong at depth 4.
+#   2. `plies_after` at nplies == 3 against `rules.legal_actions`, and above all the `table_size == 0`
+#      branch -- the attacker opening a fresh round after a refill. That branch did not exist in either
+#      written-out enumerator, so a generalisation that omitted it would pass every depth-1 and depth-2
+#      test in the suite and be blind at depth 4.
 #
-# Writing them needs a fixture builder that reliably produces ATTACK, BEAT, STOP, ATTACK, and driving
-# `deal_state` for 80 seeds did not produce one -- the attacker sometimes cannot be beaten, which ends the
-# line at ply two. The shape exists; finding it deterministically is the remaining work. Until then the
-# refactor is verified at depths 1 and 2 (the pre-existing exact differential tests, which now execute
-# through `leaf_profile_after_n` and `plies_after`) and at depths 3 and 4 for legality and determinism
-# only.
+# The shape these need is known and was verified by hand on 2026-10-07: deal, pick an attack the opponent
+# CAN beat (picking the attacker's first legal attack does not work -- it is often unbeatable, the reply
+# set is then TAKE alone and the line dies at ply two), then BEAT, then STOP, then any legal move. After
+# the STOP the roles have swapped, the table is empty and the new attacker has exactly one legal action,
+# ATTACK, with both hands refilled to six. Driving 120 deals gave 119 beatable attacks but the fixture
+# builder above still does not reproduce them inside pytest, so the two tests are withheld rather than
+# shipped red.
+#
+# Until they exist, the depth parameter is verified at depths 1 and 2 by the pre-existing exact
+# differential tests (which now execute through `leaf_profile_after_n` and `plies_after`) and at depths 1
+# to 4 for legality and determinism only.
