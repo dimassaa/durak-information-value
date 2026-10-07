@@ -44,6 +44,26 @@ over-attack profile:
 So all three replies average above the stop outcome. Fixing it needs either depth 2, or a leaf evaluation
 that charges for cards committed to the table -- and the second is a change to spec 5.4's five terms, not
 a bug fix, so it is raised rather than taken here.
+
+Depth 2, and what it did to these two tests
+-------------------------------------------
+Depth 2 is the fix the note above named, and the search now does it. One of the two fixtures reversed, and
+the reversal is the point rather than an inconvenience:
+
+* `test_a_throw_in_that_is_beaten_is_followed_by_a_stop_and_not_penalised` -- at depth 1 this position
+  chose to STOP, 1.7 against the throw's 1.633. That gap was an artefact: the depth-1 leaf scored a
+  mid-round position with the attacker's card still on the table as strictly worse than stopping, even
+  though the attacker had lost nothing. At depth 2 the search sees that it may stop *after* being beaten,
+  which reaches the same discard and the same refill and is therefore worth exactly 1.7. The beaten branch
+  costs nothing, the take branch decides, and the throw wins.
+* `test_stopping_still_wins_when_the_throw_in_costs_a_card_the_attacker_wants_to_keep` -- the guard
+  against reading the first test as "depth 2 always throws". It does not: over 18 sampled positions
+  offering both a throw-in and a stop, 4 still stop.
+
+Three hand-built fixtures were tried for the second test before falling back to a position reached by
+random play, and each produced a case where throwing wins. Recorded rather than hidden: the difference
+between the two outcomes is arithmetic, not a rule, and hunting for a prettier synthetic case would have
+been fitting the test to the code.
 """
 
 import numpy as np
@@ -52,6 +72,7 @@ import pytest
 from durak import rules
 from durak.actions import (
     ATTACK,
+    BEAT,
     STOP,
     THROW,
     action_card,
@@ -60,7 +81,7 @@ from durak.actions import (
 )
 from durak.config import Settings
 from durak.evaluation import EVAL_SWEEP_GRID, EVAL_WEIGHTS, evaluate
-from durak.leaf import reply_cards_in
+from durak.leaf import leaf_profile_after, leaf_profile_after_ply3, reply_cards_in
 from durak.opponent import initial_particles
 from durak.rng import RngStream
 from durak.search import action_value, expectimax
@@ -365,24 +386,90 @@ def test_throwing_beats_stopping_when_every_throw_in_is_beaten():
     )
 
 
-def test_stopping_beats_throwing_when_the_defender_would_grow():
-    """The other side of the same coin, and the reason the property above is not universal.
+def test_a_throw_in_that_is_beaten_is_followed_by_a_stop_and_not_penalised():
+    """Depth 2's answer on the fixture where depth 1 preferred to stop, and the reason it changed.
 
-    The defender holds two cards of the attacker's own suit at higher rank. Throwing the off-suit card
-    gives the defender a trick *and* a card; stopping discards the table and refills both hands. With the
-    leaf scoring the refill correctly, stopping wins.
+    The attacker holds a rank-6 trump and a rank-6 off-suit card; the defender holds two suit-0 cards of
+    higher rank, which beat the off-suit card and cannot touch the trump. At depth 1 this fixture chose
+    STOP, and the reason was mechanical rather than strategic: a beaten throw-in leaves both hands
+    unchanged and the round open, so the depth-1 leaf scored it strictly *worse* than stopping (1.3 against
+    1.7) even though the attacker has not lost anything -- the cards are still on the table, not in a
+    hand.
 
-    This is the test that would have caught the mis-stated rule. The Stage 10 version asserted throwing
-    dominated everywhere, and a fixture like this one is where that claim breaks.
+    Depth 2 can see the ply that resolves it. Having been beaten, the attacker may stop, and stopping
+    discards the table and refills both hands -- so "throw, get beaten, then stop" is worth exactly what
+    "stop now" is worth, 1.7, because it reaches the same discard and the same refill. Averaged over the
+    defender's three answers that is 1.9 against stopping's 1.7, and the search throws.
+
+    Asserted as the numbers rather than only the chosen action, because the mechanism is the claim: if the
+    third ply were scored as a mid-round leaf again, the beaten branch would read 1.3 and the averaging
+    would put STOP back on top. `test_stopping_still_wins_when_the_defender_would_grow_even_after_a_beat`
+    covers the other side.
     """
     hand0 = [card_at(6, 3), card_at(6, 0), card_at(0, 1)]
     hand1 = [card_at(7, 0), card_at(8, 0)]
     state = midround(hand0, hand1, trump=3)
+    throw, beat = card_at(6, 0), card_at(7, 0)
+    ho = np.asarray(sorted(hand1), dtype=np.int16)
+
+    stop_now = leaf_profile_after(state, 0, STOP, 0, STOP, 0, state.hands[0], ho, WEIGHTS)
+    beaten_then_stop = leaf_profile_after_ply3(state, 0, THROW, throw, BEAT, beat, STOP, 0,
+                                               state.hands[0], ho, WEIGHTS)
+
+    assert beaten_then_stop == pytest.approx(stop_now, abs=1e-9), (
+        f"being beaten and then stopping scored {beaten_then_stop:+.4f} against stopping now's "
+        f"{stop_now:+.4f}; both reach the same discard and the same refill, so they must agree"
+    )
+
+    particles = certain_particles(state, 1, hand1)
+    chosen = int(expectimax(state, 0, particles, WEIGHTS))
+
+    assert action_kind(chosen) == THROW, (
+        f"the search chose kind {action_kind(chosen)}; the beaten branch now costs nothing, so the "
+        f"take branch decides and throwing wins"
+    )
+
+
+def test_stopping_still_wins_when_the_throw_in_costs_a_card_the_attacker_wants_to_keep():
+    """Depth 2 does not make throwing universal, which is what keeps the test above honest.
+
+    A real position reached by random play rather than a hand-built one: trump is suit 0, the table holds
+    one answered rank-5 attack, and the attacker has one legal throw-in -- card 22, a rank-5 suit-2 card,
+    rank 5 already being on the table.
+
+    Throwing it hands the defender a card of suit 2 and, if the defender beats, the attacker is left one
+    card lighter with the round still open. The throw is beatable here too, so the mechanism is the same as
+    in the test above; what differs is that the card being shed is one the attacker would rather keep,
+    because the deck is running low and the count term is what the position turns on. Stopping commits
+    nothing and wins.
+
+    Built from `random_position` on purpose. Three earlier hand-built attempts at "a fixture where stopping
+    still wins" each produced a position where throwing wins, and the difference between them turned out to
+    be arithmetic rather than a rule -- which is the honest reason not to keep hunting for a prettier
+    synthetic case. This one is a position the rules actually reached.
+    """
+    state = random_position(deck_size=36, seed=18, max_actions=21)
+    assert state.winner == rules.EMPTY and int(state.attacker) == 0
+    assert {action_kind(int(a)) for a in rules.legal_actions(state, 0)} == {THROW, STOP}, (
+        "the fixture must offer exactly one throw-in and a stop, or it does not test the comparison"
+    )
+    throws = [int(a) for a in rules.legal_actions(state, 0) if action_kind(int(a)) == THROW]
+    assert len(throws) == 1, "the fixture must offer exactly one throw-in"
+
+    hand1 = [int(state.hands[1, i]) for i in range(int(state.hand_sizes[1]))]
+    stop_now = leaf_profile_after(state, 0, STOP, 0, STOP, 0, state.hands[0],
+                                  np.asarray(sorted(hand1), dtype=np.int16), WEIGHTS)
+    throw_value = action_value(state, throws[0], 0, certain_particles(state, 1, hand1), WEIGHTS)
+
+    assert throw_value < stop_now, (
+        f"the throw scores {throw_value:+.4f} against stopping's {stop_now:+.4f}"
+    )
 
     chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
 
     assert action_kind(chosen) == STOP, (
-        f"the search chose kind {action_kind(chosen)} while the defender grows on every throw-in"
+        f"the search chose kind {action_kind(chosen)}; stopping scores {stop_now:+.4f} and the only "
+        f"throw-in scores {throw_value:+.4f}"
     )
 
 

@@ -211,7 +211,7 @@ def build_report_one(aggregate_dir, out_path) -> Path:
                 ["Regimes", ", ".join(dealing.get("regimes", []))],
                 ["Seat 0 wins", dealing.get("first_attacker_p0_wins")],
                 ["Seat 1 wins", dealing.get("first_attacker_p1_wins")],
-                ["Deals with no trump", dealing.get("no_trump_deal_rate")],
+                ["Deals with no trump", dealing.get("at_least_one_without_trump_rate")],
             ],
             sort_keys=[],
         )
@@ -591,8 +591,8 @@ def build_report_three(aggregate_dir, out_path) -> Path:
         ("Loser's median hand", _weighted_median(loser_hand)),
         ("Empirical max table attacks", limits.get("observed_max")),
         ("Rule cap (THROWIN_CAP)", limits.get("rule_cap")),
-        ("Deals with no trump in either hand",
-         dealing.get("no_trump_deal_rate")),
+        ("Deals where at least one player holds no trump",
+         dealing.get("at_least_one_without_trump_rate")),
     ])
 
     # --- the degeneracy leads ------------------------------------------------------------
@@ -656,7 +656,7 @@ def build_report_three(aggregate_dir, out_path) -> Path:
     # --- trumps and dealing --------------------------------------------------------------
     doc.chart_block(
         "rules-trumps",
-        f"About {(dealing.get('no_trump_deal_rate') or 0.0) * 100:.1f}% of deals leave at least one "
+        f"About {(dealing.get('at_least_one_without_trump_rate') or 0.0) * 100:.1f}% of deals leave at least one "
         f"player without a trump",
         {
             "type": "doughnut",
@@ -678,7 +678,7 @@ def build_report_three(aggregate_dir, out_path) -> Path:
             ["Deck sizes played", ", ".join(str(d) for d in (dealing.get("deck_sizes") or []))],
             ["Regimes", ", ".join(dealing.get("regimes") or [])],
             ["Both players hold a trump", dealing.get("both_have_trumps")],
-            ["Deals with no trump in either hand", dealing.get("no_trump_deal_rate")],
+            ["Deals where at least one player holds no trump", dealing.get("at_least_one_without_trump_rate")],
             ["Seat 0 wins", dealing.get("first_attacker_p0_wins")],
             ["Seat 1 wins", dealing.get("first_attacker_p1_wins")],
         ],

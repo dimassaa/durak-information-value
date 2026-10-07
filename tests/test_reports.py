@@ -269,7 +269,7 @@ def _fixture_json(tmp_path) -> Path:
         "rules_and_dealing.json": {"metric": "rules_and_dealing", "deck_sizes": [36],
                                     "regimes": ["RULE_DERIVED"], "first_attacker_p0_wins": 20000,
                                     "first_attacker_p1_wins": 20000, "games": 40000,
-                                    "both_have_trumps": 39900, "no_trump_deal_rate": 0.0025},
+                                    "both_have_trumps": 39900, "at_least_one_without_trump_rate": 0.0025},
     }
     for name, body in payload.items():
         (root / name).write_text(json.dumps(body), encoding="utf-8")
@@ -473,7 +473,7 @@ def _fixture_json_reports_2_3(tmp_path) -> Path:
             "metric": "rules_and_dealing", "deck_sizes": [36],
             "regimes": ["RULE_DERIVED"], "first_attacker_p0_wins": 20000,
             "first_attacker_p1_wins": 20000, "games": 40000, "both_have_trumps": 26216,
-            "no_trump_deal_rate": 0.3446,
+            "at_least_one_without_trump_rate": 0.3446,
         },
     }
     for name, body in payload.items():

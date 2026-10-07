@@ -312,7 +312,12 @@ def rules_and_dealing(dataset_dir) -> dict:
         "first_attacker_p1_wins": int(p1),
         "games": int(total),
         "both_have_trumps": int(both),
-        "no_trump_deal_rate": (float(total - both) / total) if total else None,
+        # Fraction of deals in which AT LEAST ONE player was left without a trump. This is NOT the
+        # fraction with no trump in either hand, which is a different and far smaller event: a deal
+        # can have one player holding trumps and the other none, and that is counted here. The two
+        # differ by an order of magnitude on this dataset (0.344 against 0.021), so the key is named
+        # for the event it measures rather than for the one it was first assumed to be.
+        "at_least_one_without_trump_rate": (float(total - both) / total) if total else None,
     }
 
 
