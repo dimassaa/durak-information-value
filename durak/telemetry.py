@@ -206,11 +206,61 @@ def infer_level(records: np.ndarray) -> int:
     )
 
 
+def _write_single_table(table: pa.Table, path: Path, run_id: int | None = None) -> None:
+    """Write one already-built table to `path`, deriving partitions from its own columns.
+
+    Split out of `write_parquet` so the `ensure_empty` path writes through exactly the same code as a
+    populated level. An empty level written by a different route would be the place where the partition
+    layout quietly diverges -- no `run_id` directory, or no `deck_size` -- and every view globs a path.
+    """
+    schema = table.schema
+    # An explicit `run_id` wins; otherwise take it from the rows. For an empty table there are no rows,
+    # so the caller's value is the only thing that can name the partition -- and without a partition
+    # directory the level-2 file would come back from `read_parquet` without the `run_id` column the
+    # views join on.
+    resolved_run = run_id
+    if resolved_run is None and "run_id" in schema.names and table.num_rows:
+        values = set(int(v) for v in np.unique(table.column("run_id").to_pylist()))
+        if len(values) == 1:
+            resolved_run = values.pop()
+
+    by_deck = "deck_size" in schema.names
+    decks = sorted(set(int(v) for v in table.column("deck_size").to_pylist())) \
+        if by_deck and table.num_rows else [None]
+
+    for deck_value in decks:
+        if by_deck and table.num_rows:
+            subset = table.filter(pa.compute.equal(table.column("deck_size"), deck_value))
+            partition = path / f"deck_size={deck_value}"
+        else:
+            subset = table
+            partition = path
+        if resolved_run is not None:
+            partition = partition / f"run_id={resolved_run}"
+        partition.mkdir(parents=True, exist_ok=True)
+        pq.write_table(
+            _drop_partition_columns(subset, ("deck_size", "run_id")),
+            partition / "data.parquet",
+            row_group_size=_ROW_GROUP_SIZE,
+            compression="zstd",
+            use_dictionary=False,
+        )
+
+
 def write_parquet(records: np.ndarray, path, schema_version: int = SCHEMA_VERSION,
-                  level: int | None = None, run_id: int | None = None) -> None:
+                  level: int | None = None, run_id: int | None = None,
+                  ensure_empty: bool = False) -> None:
     """Write `records` to `path`, partitioned by `run_id` and `deck_size`.
 
     `level` is inferred from the record dtype when not given; see :func:`infer_level`.
+
+    `ensure_empty` writes a zero-row file carrying the level's schema when there is nothing to write.
+    Its purpose is that a reader can tell "this level was not recorded" from "the directory is missing",
+    which matters because `read_parquet` on a glob matching nothing is an error rather than an empty
+    table: a dataset recorded with `record_rounds=False` broke every view in `analysis/schema.sql`
+    because `rounds/**` matched no file. A zero-row file with the right schema reads back as zero rows,
+    which is the truth. It is off by default, so a caller that produced nothing still leaves no
+    directory behind.
 
     Partition columns are written into the directory path and **dropped from the stored file**,
     which is the Hive convention. Keeping them in both places is the obvious thing to do and it
@@ -223,6 +273,13 @@ def write_parquet(records: np.ndarray, path, schema_version: int = SCHEMA_VERSIO
     """
     records = np.asarray(records)
     if records.size == 0:
+        if not ensure_empty:
+            return
+        # A zero-row file with the declared schema, so the level's glob matches and reads back empty.
+        empty_level = infer_level(records) if records.dtype.names else level
+        if empty_level is None:
+            raise ValueError("ensure_empty needs a level when the records carry no fields")
+        _write_single_table(LEVEL_SCHEMAS[empty_level]().empty_table(), Path(path), run_id=run_id)
         return
 
     if level is None:
@@ -238,45 +295,7 @@ def write_parquet(records: np.ndarray, path, schema_version: int = SCHEMA_VERSIO
             pa.array(np.full(len(table), schema_version, dtype=np.int32), type=pa.int32()),
         )
 
-    # `run_id` is taken from the data when present, so a caller cannot label a partition with a
-    # run id that disagrees with the rows inside it.
-    resolved_run = run_id
-    if resolved_run is None and "run_id" in schema.names:
-        values = set(int(v) for v in np.unique(records["run_id"]))
-        if len(values) == 1:
-            resolved_run = values.pop()
-
-    # Levels 2 and 3 carry no `deck_size`: a round or a move is identified by its run and game.
-    # They nest under the run directory so a query for one run finds all three levels together.
-    by_deck = "deck_size" in schema.names
-    root = Path(path)
-
-    for deck_value in (sorted(set(int(v) for v in np.unique(records["deck_size"])))
-                       if by_deck else [None]):
-        if by_deck:
-            subset = table.filter(pa.compute.equal(table.column("deck_size"), deck_value))
-            partition = root / f"deck_size={deck_value}"
-        else:
-            subset = table
-            partition = root
-
-        if resolved_run is not None:
-            partition = partition / f"run_id={resolved_run}"
-
-        partition.mkdir(parents=True, exist_ok=True)
-        pq.write_table(
-            _drop_partition_columns(subset, ("deck_size", "run_id")),
-            partition / "data.parquet",
-            row_group_size=_ROW_GROUP_SIZE,
-            compression="zstd",
-            # No dictionary encoding: these columns are small integers a report scans end to end,
-            # and a per-group dictionary lookup on every read is the wrong trade for a few bytes
-            # of file size.
-            use_dictionary=False,
-            write_statistics=True,
-            version="2.6",
-            store_schema=True,
-        )
+    _write_single_table(table, Path(path), run_id=run_id)
 
 
 def _drop_partition_columns(table: pa.Table, names) -> pa.Table:

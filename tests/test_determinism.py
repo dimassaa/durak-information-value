@@ -317,3 +317,29 @@ def test_the_version_filter_hides_a_different_rules_version(tmp_path):
     assert sorted(t[0] for t in triples) == [1, 2], (
         f"dataset_versions must report every version present, got {triples}"
     )
+
+
+def test_a_dataset_without_rounds_or_moves_still_loads_in_every_view(tmp_path):
+    """A cheap run must stay readable. `analysis/schema.sql` globs all three levels.
+
+    DuckDB raises on a glob that matches no file, so a run with `record_rounds=False` used to break
+    every view -- which made recording everything the cheapest way to read a dataset, the opposite of
+    what the flags are for.
+    """
+    import duckdb
+
+    out = tmp_path / "level1only"
+    run_tournament(_manifest(tmp_path, games=8, block_size=4), out,
+                   record_rounds=False, record_moves=False)
+
+    sql = (Path(__file__).resolve().parent.parent / "analysis" / "schema.sql").read_text()
+    body = "\n".join(line for line in sql.splitlines() if not line.strip().startswith("--"))
+    con = duckdb.connect()
+    con.execute(f"SET VARIABLE dataset_root='{out}'")
+    for statement in [s.strip() for s in body.split(";") if s.strip()]:
+        con.execute(statement)
+
+    assert con.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 8 * CELLS
+    assert con.execute("SELECT COUNT(*) FROM rounds").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM moves").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM win_rates").fetchone()[0] > 0

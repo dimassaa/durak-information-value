@@ -309,10 +309,14 @@ def _write_levels(outcomes, rounds, moves, out_dir: Path, level: int, schema_ver
     only works once the levels are siblings.
     """
     write_parquet(outcomes, out_dir / "games", schema_version=schema_version, level=1)
-    if rounds.size:
-        write_parquet(rounds, out_dir / "rounds", schema_version=schema_version, level=2)
-    if moves.size:
-        write_parquet(moves, out_dir / "moves", schema_version=schema_version, level=3)
+    # `ensure_empty` on levels 2 and 3: a run that recorded no rounds or no moves still gets a zero-row
+    # file for that level, because `analysis/schema.sql` globs `rounds/**` and `moves/**` and DuckDB
+    # raises on a glob matching nothing. Without it, `record_rounds=False` made every view fail, so the
+    # cheapest way to read a dataset was to record everything.
+    write_parquet(rounds, out_dir / "rounds", schema_version=schema_version, level=2,
+                  run_id=0, ensure_empty=True)
+    write_parquet(moves, out_dir / "moves", schema_version=schema_version, level=3,
+                  run_id=0, ensure_empty=True)
 
 
 @dataclass(frozen=True)
