@@ -107,17 +107,10 @@ def test_the_leaf_transition_matches_the_engine_for_an_attack_and_a_take():
 
     mine, theirs = _hypothesised_hands(pristine)
     transferred = card_at(0, 1)
-    engine_profile = _evaluate_profile(profile(after, 0))
-
-    # The engine's own reading, minus the transfer's contribution, must equal the leaf. The transfer is
-    # one non-trump, non-high card, so the count term accounts for the whole 2.0 gap and nothing else does.
-    trumps = int(transferred % 4 == int(pristine.trump))
-    high = 1 if rank_of(transferred) >= HIGH_RANK else 0
-    residual = -W[0] * 2 - W[1] * 2 * trumps - W[2] * 2 * high
 
     assert leaf_profile_after(pristine, 0, THROW, transferred, TAKE, 0, mine, theirs, W) == \
-        pytest.approx(engine_profile + residual, abs=1e-9), (
-            "the leaf must differ from the engine by exactly the transfer's value and nothing else"
+        pytest.approx(_evaluate_profile(profile(after, 0)), abs=1e-9), (
+            "the leaf must match the engine EXACTLY after a take"
         )
 
 
@@ -173,9 +166,13 @@ def test_a_take_is_neutral_rather_than_progress():
 def test_the_transfer_correction_does_not_flatten_the_hand_count_term():
     """The count term must still separate a genuine shed card from a kept one.
 
-    Guards against over-correcting. If the fix had simply zeroed the count term whenever a card moved, the
-    search would have no gradient toward emptying its hand at all -- a different degenerate game rather
-    than the correct one.
+    A take is worth exactly ONE card against a discard on the count term, and that is CORRECT rather than
+    a defect: the opponent picked up a card, so they now have one more to shed before they can win, while
+    the thrower has shed one and moved closer to an empty hand.
+
+    This test exists because the gap used to be -2.0 -- taking looked worth two cards -- which is what a
+    take scores if the picked-up cards are credited to the player rather than the opponent. It pins the
+    sign and the magnitude, and the differential tests against the engine pin the same thing end to end.
     """
     state, throw, beat, mine, theirs = _transfer_fixture()
     weights = np.array([1.0, 0.0, 0.0, 0.0, 0.0])
@@ -183,9 +180,9 @@ def test_the_transfer_correction_does_not_flatten_the_hand_count_term():
     taken = leaf_profile_after(state, 0, THROW, throw, TAKE, 0, mine, theirs, weights)
     discarded = leaf_profile_after(state, 0, THROW, throw, BEAT, beat, mine, theirs, weights)
 
-    assert discarded - taken == pytest.approx(1.0, abs=1e-9), (
-        f"expected the discard to beat the take by exactly 1.0 on the count term, got "
-        f"{discarded - taken:+.4f}"
+    # The take scores +1 against the discard's 0: the opponent is one card further from empty.
+    assert taken - discarded == pytest.approx(1.0, abs=1e-9), (
+        f"a take must be worth exactly one more card than a discard, got {taken - discarded:+.4f}"
     )
 
 

@@ -227,10 +227,14 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
             raise ValueError(f"an attacking player cannot play kind {kind_a}")
     else:
         if kind_a == TAKE:
-            # `player` is the defender, so the table holds the opponent's attacks: they migrate.
+            # `player` is the defender and picks the table up, so the cards go into `mine`. An earlier
+            # version collected into `theirs` -- crediting the OPPONENT with the cards the player had
+            # just taken. Since the evaluation reads "opponent's cards minus mine", handing the opponent
+            # cards RAISES the player's score, and taking became free-or-better than beating: the search
+            # took 49.9% of its defensive actions and lost 100% of its games to a plain heuristic.
             _table_stats(table, table_size, trump, moved_o)
-            _collect(theirs, size_o, table, table_size, defenses, defense_count)
-            size_o += table_size + defense_count
+            _collect(mine, size_p, table, table_size, defenses, defense_count)
+            size_p += table_size + defense_count
             round_ends = True
         elif kind_a == BEAT:
             size_p = _remove_card(mine, size_p, card_a)
@@ -332,14 +336,15 @@ def _finish(mine, size_p: int, theirs, size_o: int, trump: int, player: int, dec
     _stats(mine, size_p, trump, stats_p)
     _stats(theirs, size_o, trump, stats_o)
 
-    # Undo the transfer, per original owner, before any term reads the stats. A card that left `player`'s
-    # hand is credited back to `player` and debited from the opponent, and vice versa: the card is scored
-    # as if it had never changed hands.
-    for k in range(3):
-        stats_p[k] += moved_p[k]
-        stats_o[k] -= moved_p[k]
-        stats_o[k] += moved_o[k]
-        stats_p[k] -= moved_o[k]
+    # No transfer correction is applied here. One used to be, to stop a card changing hands from reading
+    # as progress. It was masking a bug: the TAKE branch credited the picked-up cards to the OPPONENT, so
+    # the transfer was scored backwards, and the correction was derived from that same wrong attribution.
+    # With the attribution fixed, taking is already penalised -- the defender's hand grows and the
+    # opponent's shrinks, which lowers `cards_opponent - cards_player` -- and undoing the transfer only
+    # made taking FREE again, which is why the search never beat anything.
+    #
+    # `moved_p` / `moved_o` stay as parameters: they record which cards changed hands and for how long, and
+    # they let the differential test assert EXACT equality with the engine again rather than a residual.
 
     value = weights[0] * (stats_o[0] - stats_p[0])
     value += weights[1] * (stats_p[1] - stats_o[1])
