@@ -142,9 +142,13 @@ These are not done. Each is recorded rather than quietly dropped.
 3. **`k` cannot be varied.** `particle_count` is recorded for reproducibility and refused if it disagrees
    with the compiled constant. Whether `delta` is stable across particle counts is **unmeasured**, and
    no claim may be made in either direction.
-4. **The endgame is degenerate.** An empty hand ends the round before the defender responds, so ~90% of
-   games end with the winner attacking an unopposed last card. This is common-mode across the search
-   arms, so it does not distort the comparison, but it must be stated on the face of the report.
+4. **The endgame is not degenerate — that was my mischaracterisation.** An empty hand ends the round
+   before the defender responds, so 87.9% of games end with the winner attacking an unopposed last
+   card. That is the ordinary rule of подкидной дурак, correctly implemented, not a defect. I earlier
+   called it "degenerate" and inferred a ceiling on the information effect from it. **The ceiling
+   argument was wrong and is refuted by measurement**: zero of 1,140,000 games contained no
+   informational decision, so the endgame rule bounds nothing. The true wording is that the last
+   attack is uninformative, not that games are decided without information.
 5. **`informativeness` is blind to asymmetry.** It is the entropy of the *normalised* marginal, so a
    filter that knows the hand exactly scores the same as one that knows nothing. The phase curve is
    suggestive, not proof.
