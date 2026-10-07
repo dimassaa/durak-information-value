@@ -25,6 +25,7 @@ for byte. A checksum is used only to keep the failure message readable.
 """
 
 import hashlib
+import re
 import os
 import subprocess
 import sys
@@ -219,3 +220,26 @@ def test_every_recorded_row_is_internally_consistent():
                 f"game {int(game)} has seq {seq.min()}..{seq.max()} over {len(seq)} moves; a game's "
                 f"sequence must be dense from zero"
             )
+
+def test_the_published_views_filter_to_the_current_versions():
+    """`analysis/schema.sql` names the version triple in three macros, and those literals must equal
+    `durak.versions`.
+
+    They have drifted twice, and both times the failure was silent and total: with
+    `SCHEMA_VERSION` at 2 and the macro still at 1, every view returned zero rows and the reports showed
+    empty figures with no error anywhere. The drift is invisible because "no rows" looks like a dataset
+    with no games rather than a filter pointing at the wrong version.
+    """
+    from durak import versions
+    from analysis.queries import _SQL_PATH
+
+    sql = _SQL_PATH.read_text()
+    for macro, expected in (("current_engine_version", versions.ENGINE_VERSION),
+                            ("current_rules_version", versions.RULES_VERSION),
+                            ("current_schema_version", versions.SCHEMA_VERSION)):
+        match = re.search(rf"MACRO {macro}\(\) AS (\d+);", sql)
+        assert match, f"{macro} is not declared in schema.sql"
+        assert int(match.group(1)) == int(expected), (
+            f"{macro} says {match.group(1)} but durak.versions says {expected}; every view will "
+            f"return the wrong rows or none at all"
+        )
