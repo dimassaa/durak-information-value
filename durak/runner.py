@@ -41,7 +41,6 @@ requires that a reader can see them without re-running anything.
 from __future__ import annotations
 
 import json
-import math
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -53,6 +52,10 @@ from typing import Tuple
 import numpy as np
 
 from durak import rules
+#: Imported, not reimplemented. The runner needs an interval for `RunSummary.wilson`, and a second
+#: copy of the formula could drift from the one the reports publish -- the project's stated
+#: intervals and its internal sanity checks would then be two statistics with one name.
+from analysis.stats import wilson_interval
 from durak.audit import audit_outcomes
 from durak.config import Settings
 from durak.engine import play_block
@@ -110,26 +113,8 @@ from durak.versions import ENGINE_VERSION, RULES_VERSION, SCHEMA_VERSION
 
 # Wilson score, used for every win rate the reports quote. 1.96 is the two-sided 95% interval,
 # pre-registered so no interval width is chosen after seeing a p-value.
-WILSON_Z = 1.96
 
 
-def wilson_interval(successes: int, trials: int, z: float = WILSON_Z) -> Tuple[float, float]:
-    """Wilson score interval for a binomial proportion.
-
-    Preferred over the normal approximation because it stays inside [0, 1] and behaves at small
-    counts -- and because a symmetric interval around 0.5 is exactly what a symmetry check needs
-    to be able to contain.
-    """
-    if trials <= 0:
-        return (0.0, 1.0)
-    proportion = successes / trials
-    denominator = 1.0 + z * z / trials
-    centre = (proportion + z * z / (2 * trials)) / denominator
-    margin = (
-        z * math.sqrt(proportion * (1.0 - proportion) / trials + z * z / (4 * trials * trials))
-        / denominator
-    )
-    return (max(0.0, centre - margin), min(1.0, centre + margin))
 
 
 @dataclass(frozen=True)
