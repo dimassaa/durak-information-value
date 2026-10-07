@@ -873,3 +873,26 @@ Task 18 PRE-FLIGHT: full correctness audit before the final run. 36-card deck, 1
   It is a real, significant effect of information ON THIS POLICY CLASS, and it is not evidence about
   information in Durak generally. The evaluation function, not the information, is the binding
   constraint on absolute strength. Any report must say so or it will be read as a claim about the game.
+
+Task 18 Step 1: THE SCALE, decided and written down BEFORE the run so it is not a post-hoc choice.
+
+  Measured throughput of the full 8-strategy field with rounds and moves recorded:
+    1 worker   122 games/s        10 workers  561 games/s        (12 cores)
+  Grid size: 57 cells for deck 36 / RULE_DERIVED, 228 cells for both decks and both regimes.
+
+  WHAT HAS TO BE RESOLVED. The primary metric is the paired head-to-head between the two search arms.
+  Measured at 400 games per seat order it was 0.570 (456/800), and the sampling already resolves it:
+    paired n= 800 -> Wilson (0.5342, 0.6027), excludes 0.5; McNemar p = 5.2e-02
+  That is enough to see the effect and not enough to publish it. The target is a half-width near 0.007:
+    paired n=20000 -> Wilson (0.5631, 0.5768), half-width 0.0069
+
+  CHOSEN, two tiers with different jobs rather than one compromise number:
+    PRIMARY   all 8 strategies, deck 36, RULE_DERIVED, 20,000 games/cell = 57 cells, 1.14M games, ~34 min.
+              This is the configuration spec 8.1 pins the primary metric to, and it is where the power goes.
+    SENSITIVITY the full grid, 36 and 52, both regimes, 2,000 games/cell = 228 cells, 456k games, ~14 min.
+              Half-width 0.0217, adequate to show the shape of the tournament and to see whether the
+              effect survives a different deck or a different first-attacker regime -- not to publish.
+  Rejected: 20,000 across all 228 cells = 4.56M games, ~2.3 hours, for precision on 171 cells no report
+  reads at that resolution.
+
+  The pilot runs at 10% of the primary tier. A non-clean pilot is a defect to fix, never a data point.
