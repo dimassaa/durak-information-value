@@ -832,3 +832,44 @@ Task 17: THE HEADLINE RESULT, measured head to head. Play the two arms against E
   won. Both conclusions were false and both would have been reported as findings. The lesson is that the
   seat/strategy distinction needs a type or a helper, not a comment: it has now been violated three
   times in one session, each time producing a confident wrong answer.
+
+Task 18 PRE-FLIGHT: full correctness audit before the final run. 36-card deck, 1,200 trials per
+  strategy against RANDOM across both seat orders, 0 anomalies anywhere.
+
+  | strategy          rate vs RANDOM | Wilson CI
+  | AUTO_DEFEND           0.9167      | (0.8997, 0.9310)
+  | CONSERVATIVE          0.5008      | (0.4726, 0.5291)
+  | GREEDY                0.9800      | (0.9704, 0.9865)
+  | SEARCH_UNIFORM        0.6500      | (0.6226, 0.6765)
+  | SEARCH_INFORMED       0.6450      | (0.6175, 0.6716)
+  | CHEATER_DOC           0.6408      | (0.6133, 0.6675)
+
+  CORRECTNESS, verified and clean:
+    * `RANDOM vs RANDOM` symmetry: seat 0 won 589, seat 1 won 611 of 1,200 -- 0.4908, inside the Wilson
+      interval for 0.5. This is spec 7.3's only exact assertion and it holds.
+    * Zero anomalies in every run: no flagged game, no undecided game, no redeal overflow.
+    * Worker count, block size and repeat runs reproduce byte-identically (`tests/test_determinism.py`).
+    * Compiled and interpreted modes agree bit for bit (`tests/test_equivalence.py`).
+    * Legality: every returned action is in `legal_actions`, asserted over random positions.
+    * The informed arm beats the uninformed arm head to head: 456/800 = 0.5700, p = 8.5e-05.
+
+  ONE METRIC BUG, MINE, NOT THE ENGINE'S: the first pass reported `RANDOM` at 1800/1800 = 1.0000, which
+  looks like RANDOM beating every strategy. It is a self-pairing, and `wins` sums both seats, so every
+  decided game is won by "a RANDOM" by construction. The control is meaningless as written; the real
+  symmetry check is the 0.4908 above.
+
+  STRATEGY QUALITY, which is a result and not a defect, under the project's own philosophy: a strategy
+  that plays badly is a weak strategy, not a broken simulator.
+    * CONSERVATIVE at 0.5008 is no better than RANDOM. Its thresholds make it take 31% of defensive
+      actions rather than spend a trump, and taking is expensive. The rules are implemented correctly;
+      they describe a weak player.
+    * The search arms sit at 0.645, below the information-free `GREEDY` at 0.980 and below the
+      throwaway `AUTO_DEFEND` at 0.917. `SEARCH_INFORMED` beats `GREEDY` in 1 of 600 games.
+    * The evaluation weights (1.0, 2.0, 0.5, 0.3, 1.5) were hand-justified and never validated against
+      play. A trump weight of 2.0 against a hand-count weight of 1.0 makes the search hoard trumps, and
+      hoarding leads to forced takes and large hands.
+
+  WHAT THIS DOES AND DOES NOT LICENSE. The headline 7-point effect is measured between two weak players.
+  It is a real, significant effect of information ON THIS POLICY CLASS, and it is not evidence about
+  information in Durak generally. The evaluation function, not the information, is the binding
+  constraint on absolute strength. Any report must say so or it will be read as a claim about the game.
