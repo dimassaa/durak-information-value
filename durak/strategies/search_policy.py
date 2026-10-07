@@ -50,12 +50,18 @@ from durak.evaluation import EVAL_WEIGHTS
 from durak.opponent import _draw_particles, _unseen_into
 from durak.strategies.base import InfoMode
 from durak.rules import GameState
-from durak.search import expectimax
+from durak.search import _expectimax
 
 #: Particles drawn per decision when the hand is *not* known. The informed arm overrides this with 1, so
 #: the two arms differ in the source of the hypothesis and never in how many hypotheses are averaged over a
 #: hand they can see exactly.
 PARTICLE_COUNT = 100
+
+#: Depth both search arms run at. Depth is a RESEARCH parameter, not a performance knob: measured on one
+#: harness the information effect was +0.0176 at depth 1 and -0.0527 at depth 2, so the value changes the
+#: answer. Whichever depth is used must be recorded in the run manifest and printed next to every published
+#: number, because depth 4 against depth 1 compares two different policies.
+SEARCH_DEPTH = 2
 
 #: Pinned spellings of the two information modes, so callers need not import the enum to say which arm
 #: they mean. Named here rather than at the call site because "the arm with the real hand" is the single
@@ -122,4 +128,4 @@ def policy_search(state: GameState, player: int, strategy_id: int, info_mode: in
     # -----------------------------------------------------------------------------
 
     # One search, one set of parameters, both arms.
-    return expectimax(state, player, particles, EVAL_WEIGHTS)
+    return _expectimax(state, player, particles, EVAL_WEIGHTS, SEARCH_DEPTH)

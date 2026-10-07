@@ -84,7 +84,7 @@ from durak.evaluation import EVAL_SWEEP_GRID, EVAL_WEIGHTS, evaluate
 from durak.leaf import leaf_profile_after, leaf_profile_after_ply3, reply_cards_in
 from durak.opponent import initial_particles
 from durak.rng import RngStream
-from durak.search import action_value, expectimax
+from durak.search import DEFAULT_DEPTH, action_value, expectimax
 from durak.engine import choose_action
 from durak.strategies import RANDOM
 from tests.support import Pool, card_at, legal_state, random_position
@@ -342,7 +342,7 @@ def test_it_never_spends_a_trump_when_holding_it_is_better():
     assert not rules.beats(hand1[0], hand0[0], state.trump), "and must not be able to beat the trump"
 
     particles = certain_particles(state, 1, hand1)
-    scores = {int(a): action_value(state, int(a), 0, particles, WEIGHTS)
+    scores = {int(a): action_value(state, int(a), 0, particles, WEIGHTS, DEFAULT_DEPTH)
               for a in rules.legal_actions(state, 0)}
 
     chosen = int(expectimax(state, 0, particles, WEIGHTS))
@@ -459,7 +459,7 @@ def test_stopping_still_wins_when_the_throw_in_costs_a_card_the_attacker_wants_t
     hand1 = [int(state.hands[1, i]) for i in range(int(state.hand_sizes[1]))]
     stop_now = leaf_profile_after(state, 0, STOP, 0, STOP, 0, state.hands[0],
                                   np.asarray(sorted(hand1), dtype=np.int16), WEIGHTS)
-    throw_value = action_value(state, throws[0], 0, certain_particles(state, 1, hand1), WEIGHTS)
+    throw_value = action_value(state, throws[0], 0, certain_particles(state, 1, hand1), WEIGHTS, DEFAULT_DEPTH)
 
     assert throw_value < stop_now, (
         f"the throw scores {throw_value:+.4f} against stopping's {stop_now:+.4f}"
@@ -499,7 +499,7 @@ def test_the_particle_set_changes_what_the_search_values():
     assert rules.BEAT not in reply_kinds(state, throw, filler + [card_at(4, 2), card_at(8, 1)])
 
     def score(particles):
-        return action_value(state, throw, 0, particles, WEIGHTS)
+        return action_value(state, throw, 0, particles, WEIGHTS, DEFAULT_DEPTH)
 
     assert score(blocking) != pytest.approx(score(harmless)), (
         "two opposite beliefs about the defender's hand produced the identical score, so the search is "
@@ -554,10 +554,10 @@ def test_the_search_returns_the_argmax_of_its_own_value_function():
 
         particles = certain_particles(state, 1, hand1, k=8)
         chosen = int(expectimax(state, 0, particles, WEIGHTS))
-        scores = [action_value(state, int(a), 0, particles, WEIGHTS) for a in options]
+        scores = [action_value(state, int(a), 0, particles, WEIGHTS, DEFAULT_DEPTH) for a in options]
         best = float(np.max(scores))
 
-        assert action_value(state, chosen, 0, particles, WEIGHTS) == pytest.approx(best, abs=1e-9), (
+        assert action_value(state, chosen, 0, particles, WEIGHTS, DEFAULT_DEPTH) == pytest.approx(best, abs=1e-9), (
             f"the search chose a candidate worth {scores[0]:.4f} when {best:.4f} was available"
         )
         disagreed_with_random += chosen != int(choose_action(state, 0, RANDOM, 0))
