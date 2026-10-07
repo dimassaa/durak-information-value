@@ -9,7 +9,8 @@ Resolution priority is the project owner's call, not the implementer's.
   `reports` as packages before those directories exist (Tasks 5, 17, 19). Harmless
   for test runs from the source tree; will matter if the package is ever built
   with an isolated build backend before those stages land. *(Resolved at Stage 04
-  for `durak.strategies`; `analysis` and `reports` still outstanding.)*
+  for `durak.strategies`; `analysis` and `reports` still outstanding.)* **CLOSED** — both packages now
+  exist and import cleanly; the pyproject declaration is accurate.*
 
 - **Stage 02** — `durak.rng` installs a NumPy overflow-warning filter scoped by message.
   A `pytest -W error::RuntimeWarning` run therefore fails under `NUMBA_DISABLE_JIT=1` by
@@ -18,13 +19,13 @@ Resolution priority is the project owner's call, not the implementer's.
 
 - **Stage 04 — CORRECTED at Stage 05, do not act on the original text.** The original
   entry said 44% of `RANDOM` games never terminate and that a capped-game scoring rule was
-  blocking the headline result. **That was wrong.** The 44% was caused by the trump
+  blocking the headline result. **That was wrong.** **CLOSED:** the dominant cause turned out to be the take-rule bug, not the trump representation; see the ledger. The 44% is superseded by the take fix.
+
+  The 44% was caused by the trump
   representation bug fixed in Stage 05, not by the rules. `RANDOM` vs `RANDOM` is now
   0.5028 over 6,000 games with zero capped games.
 
-- **Stage 05** — `GREEDY` caps out in 11 of 400 games (2.75%) and `AUTO_DEFEND` in 20 of
-  400 (5%), from the genuine "taking is always legal" stall at low hand sizes with an empty
-  deck. `RANDOM` reaches it 0 times in 400, so the project's only exact assertion is
+- **Stage 05 — RESOLVED: the stall was the take-rule bug, not the rules.** `GREEDY` capped out in 11 of 400 games (2.75%) and `AUTO_DEFEND` in 20 of 400 (5%). `RANDOM` reaches it 0 times in 400, so the project's only exact assertion is
   unaffected. Two follow-ups, both the study owner's call: the engine (Task 6) must record
   capped games as flagged anomalies rather than losses, and every report must publish the
   per-strategy termination rate beside the win rate. Whether to close the hole in the rules
@@ -54,8 +55,7 @@ Resolution priority is the project owner's call, not the implementer's.
   conservation can be verified from the dataset alone rather than by re-running the game.
   Additive: no spec field renamed or removed. The spec's telemetry table should be updated.
 
-- **Stage 07** — the `NUMBA_DISABLE_JIT=1` full suite has **not** been run to completion since
-  Stage 6. It takes ~11 minutes, which is why it has not become routine. The per-file runs and the
+- **Stage 07 — DONE.** The `NUMBA_DISABLE_JIT=1` full suite has now been run to completion (320 passed, exit 0). It takes ~11 minutes, which is why it has not become routine. The per-file runs and the
   subprocess equivalence probe cover the same ground more cheaply, but the full interpreted pass is
   the project's formal cross-mode gate and must be run before Task 14 (the `prange` port), whose
   entire purpose is that guarantee. Running it in the background while working is the practical
@@ -72,7 +72,7 @@ Resolution priority is the project owner's call, not the implementer's.
   allocation for moves and 3,000,000 for rounds even though level 3 is sampled 1-in-20. Fine at
   current block sizes (Task 8 splits into blocks); worth revisiting if block sizes grow.
 
-- **Stage 08** — `GREEDY` fails to terminate in 5.0% of 36-card games and 7.6% of 52-card games
+- **Stage 08 — RESOLVED at the take-rule fix.** `GREEDY` fails to terminate in 5.0% of 36-card games and 7.6% of 52-card games
   (measured over 2,000 and 1,000 games respectively; `AUTO_DEFEND` was 5% in Stage 6). This is
   **not yet diagnosed**. Either it is a property of the rules, in which case every win rate needs a
   stated treatment of undecided games and Task 11's definitions must settle it; or it is a defect in
@@ -310,3 +310,5 @@ Resolution priority is the project owner's call, not the implementer's.
 36. `leaf.py` credited the cards picked up by a TAKE to the OPPONENT instead of the player. Since the evaluation reads `cards_opponent - cards_player`, handing the opponent cards RAISED the player's score, so taking beat every alternative and the search took 49.9% of its defensive actions, finishing with 10.5 cards against GREEDY's 0.42 and losing 100% of its games to a plain heuristic. Fixed; the take rate fell to 21.2% and the differential tests against the engine are EXACT again.
 37. The Stage-12 transfer correction was masking bug 36 rather than being independent of it: it was derived from the same wrong attribution, so it cancelled the error instead of exposing it. Removing it -- rather than extending it -- is what restored exact engine agreement.
 38. A take really is worth +1 on the count term, because the opponent now holds one more card to shed while the thrower has moved closer to empty. Any "taking must be penalised" rule is wrong; what the leaf cannot see is the cost that arrives later, when the same opponent attacks again with the larger hand. Depth 1 has no way to represent it, which is the strongest argument yet for the depth-2 change.
+39. `benchmarks/bench_engine.py` measured CPU time per policy with no guard against running under xdist, where each worker is a separate process and the figures describe the worker rather than the work. The suite's default `addopts` excludes `-m perf`, so it only bit when the benchmark was run deliberately in parallel -- exactly when a plausible wrong throughput would be believed. Both perf tests now skip under `PYTEST_XDIST_WORKER`.
+40. STAGE 06 item closed: `next_below` is annotated `np.uint64` and every call site (`opponent.py:172`, `policies.py:272,275`, `rules.py:429,990`) already passes a uint64. There is no uint64-at-the-boundary crossing outside `rng.py`. The suggested grep found nothing.

@@ -56,6 +56,17 @@ POLICIES = {
 DEFAULT_GAMES = 2_000
 
 
+def _under_xdist() -> bool:
+    """Whether pytest is distributing this run across worker processes.
+
+    Under xdist each worker is a separate process, so a per-process CPU measure times the worker rather
+    than the work, and the reported games/sec is plausible and wrong. The suite's default `addopts`
+    excludes `-m perf`, so this only bites when someone runs the benchmark deliberately in parallel -- which
+    is exactly the moment a plausible wrong throughput number would be believed.
+    """
+    return bool(os.environ.get("PYTEST_XDIST_WORKER") or os.environ.get("PYTEST_XDIST_WORKER_COUNT"))
+
+
 def run(policies=("RANDOM", "GREEDY"), deck_size: int = 36, games: int = DEFAULT_GAMES,
         record_telemetry: bool = False) -> dict:
     """Measure each policy's cost. Returns games/sec and CPU-seconds per game.
@@ -125,7 +136,12 @@ def test_throughput_is_measured_for_every_policy(capsys):
     Prints rather than asserts a rate: wall-clock thresholds fail on shared hardware for reasons
     unrelated to the code, and a benchmark that asserts its own speed is a benchmark that fails
     when the machine is busy. The printed numbers are the deliverable.
+
+    Skipped under xdist, where each worker is a separate process and the CPU figures describe the
+    worker rather than the work -- a plausible wrong number is worse than no number.
     """
+    if _under_xdist():
+        pytest.skip("throughput is meaningless under xdist: each worker times itself, not the run")
     report = run()
     print("\n=== engine throughput (deck 36, telemetry off) ===")
     for name, values in report["policies"].items():
@@ -143,6 +159,8 @@ def test_throughput_is_measured_for_every_policy(capsys):
 @pytest.mark.perf
 def test_telemetry_cost_is_measured_separately():
     """Level 2 and level 3 are not free, and the dataset scale depends on knowing by how much."""
+    if _under_xdist():
+        pytest.skip("throughput is meaningless under xdist: each worker times itself, not the run")
     without = run(games=1_000, record_telemetry=False)
     with_telemetry = run(games=1_000, record_telemetry=True)
 
