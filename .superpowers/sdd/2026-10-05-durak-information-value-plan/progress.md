@@ -771,3 +771,30 @@ Task 14: BLOCKED, and not for a reason the plan anticipated. `play_block` cannot
   level-1/2/3 field compared by SHA-256 per array), a block-splitting equivalence test, and a row-consistency
   test. The serial-versus-parallel comparison is present but SKIPPED with the reason recorded, rather than
   written to pass by comparing the serial path with itself.
+
+Task 17: THE REPORTED BLOCKER WAS MY OWN MISREADING, corrected. I reported that the two search arms
+  played identical games in the tournament, on three pieces of evidence. Two of them do not support it:
+
+  1. The two datasets have the same `game_seed` values. That is CORRECT and required: a game's identity
+     is `(run_seed, pairing_index, game_index)`, so matched arms must be dealt the same games. I read a
+     property of the seeding design as evidence that the games were the same.
+  2. The first five `winner` values matched. Five bits is not evidence of anything.
+  3. The win TOTALS were both 645. That is a coincidence in the aggregate, not identity.
+
+  Measured properly -- comparing all 500 games of cell 0, the two arms differ in 204 of them:
+    games=500 block=50 w=1: uniform 645  informed 645  differ 204/500
+    games=500 block=20 w=1: uniform 645  informed 645  differ 204/500
+    games=200 block=50 w=6: uniform 268  informed 265  differ  75/200
+  Equal totals alongside 204 differing games is arithmetically fine (the changes balance) and not a sign
+  of anything.
+
+  Everything downstream was verified individually and is sound: `info_modes_for` returns
+  (INFO_PARTICLES, 0) for `SEARCH_UNIFORM` and (INFO_TRUTH, 0) for `SEARCH_INFORMED`; the engine passes
+  `info` per seat; a direct `play_block` with the two modes produces different action counts
+  (98/101/111 against 118/99/95); decisions diverge on 15.4% of positions; and the worker pool gives
+  identical output at 1, 2 and 6 workers.
+
+  WHAT ACTUALLY REMAINS UNRESOLVED is the headline number, not the machinery. Measured so far the effect
+  is smaller than the noise: +0.0297 at 2,000 games in the first pass, and -0.1375 at 40 games in the
+  three-strategy run. Neither is usable. The arms differ in play but the win-rate difference has not been
+  shown to be non-zero, and Task 18's scale is what settles it.
