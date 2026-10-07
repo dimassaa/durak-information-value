@@ -18,6 +18,7 @@ The three specific leaks this pins:
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -169,3 +170,111 @@ def test_an_empty_document_still_renders_valid_html(tmp_path):
     html = path.read_text(encoding="utf-8")
     assert html.lstrip().startswith("<!DOCTYPE html>")
     assert html.rstrip().endswith("</html>")
+
+# --- report 1: the price of information -----------------------------------------
+
+
+def _fixture_json(tmp_path) -> Path:
+    """Minimal aggregate set shaped exactly like `analysis/data/*.json`."""
+    root = tmp_path / "agg"
+    root.mkdir()
+    payload = {
+        "meta.json": {
+            "engine_version": 2, "rules_version": 2, "schema_version": 2,
+            "games": 40000, "build_date": "2026-10-07", "dataset_dir": "/tmp/run",
+            "primary_deck_size": 36, "settings": {"seed": 3},
+        },
+        "price_of_information.json": {
+            "metric": "price_of_information", "deck_size": 36, "comparison": "head_to_head",
+            "informed": {"n": 20000, "wins": 10820, "win_rate": 0.541,
+                         "ci": [0.5297, 0.5522]},
+            "uniform": {"n": 20000, "wins": 9180, "win_rate": 0.459,
+                        "ci": [0.4478, 0.4703]},
+            "delta": {"point": 0.082, "ci": [0.0620, 0.1024],
+                      "ci_kind": "paired_bootstrap_percentile",
+                      "discordant_b": 10820, "discordant_c": 9180,
+                      "mcnemar": 2.302e-07, "adjusted_p": 2.302e-07},
+            "undecided_games": 0,
+            "undecided_note": "Undecided games are excluded from every rate.",
+        },
+        "data_quality.json": {"metric": "data_quality", "games": 40000, "anomalies": 0,
+                             "undecided_games": 0, "flag_redeals_exceeded": 0, "clean": True},
+        "tournament_overview.json": {
+            "metric": "tournament_overview",
+            "rows": [{"strategy_id": 5, "n": 40000, "wins": 20080, "win_rate": 0.502,
+                      "ci": [0.497, 0.507], "undecided_games": 0}],
+            "note": "Marginal rates.",
+        },
+        "opponent_independent_strength.json": {"metric": "opponent_independent_strength",
+                                               "opponent": 2, "rows": [], "note": "n/a"},
+        "rules_and_dealing.json": {"metric": "rules_and_dealing", "deck_sizes": [36],
+                                    "regimes": ["RULE_DERIVED"], "first_attacker_p0_wins": 20000,
+                                    "first_attacker_p1_wins": 20000, "games": 40000,
+                                    "both_have_trumps": 39900, "no_trump_deal_rate": 0.0025},
+    }
+    for name, body in payload.items():
+        (root / name).write_text(json.dumps(body), encoding="utf-8")
+    return root
+
+
+def test_report_one_renders_from_aggregate_json(tmp_path):
+    from reports.build import build_report_one
+
+    agg = _fixture_json(tmp_path)
+    out = build_report_one(agg, tmp_path / "out" / "01_price_of_information.html")
+    html = out.read_text(encoding="utf-8")
+
+    assert out.name == "01_price_of_information.html"
+    assert out.exists()
+    assert html.lstrip().startswith("<!DOCTYPE html>")
+    # The headline must be the measured number, not a restatement of the question.
+    assert "+0.0820" in html
+    assert "0.0620" in html and "0.1024" in html, "the paired interval must be on the page"
+    assert "2.302e-07" in html, "the Holm-adjusted p-value must be on the page"
+
+
+def test_report_one_states_that_the_value_is_a_lower_bound(tmp_path):
+    """The claim has to be visible where the number is read, not only in the README.
+
+    The informed search is depth-limited, so the measured effect is a floor on what perfect knowledge is
+    worth. A reader who sees "+0.082" without that qualification will quote it as the price.
+    """
+    from reports.build import build_report_one
+
+    agg = _fixture_json(tmp_path)
+    html = build_report_one(agg, tmp_path / "out.html").read_text(encoding="utf-8")
+
+    assert "lower bound" in html.lower()
+
+
+def test_report_one_carries_a_data_quality_block(tmp_path):
+    from reports.build import build_report_one
+
+    agg = _fixture_json(tmp_path)
+    html = build_report_one(agg, tmp_path / "out.html").read_text(encoding="utf-8")
+
+    assert "Data quality" in html
+    assert "anomalies" in html and "clean" in html
+
+
+def test_report_one_is_byte_identical_across_two_builds(tmp_path):
+    from reports.build import build_report_one
+
+    agg = _fixture_json(tmp_path)
+    first = tmp_path / "one.html"
+    second = tmp_path / "two.html"
+    build_report_one(agg, first)
+    build_report_one(agg, second)
+
+    assert first.read_bytes() == second.read_bytes()
+
+
+def test_report_one_reports_the_build_date_from_meta_not_the_clock(tmp_path):
+    from reports.build import build_report_one
+
+    agg = _fixture_json(tmp_path)
+    html = build_report_one(agg, tmp_path / "out.html").read_text(encoding="utf-8")
+
+    assert "2026-10-07" in html
+    for forbidden in ("new Date", "toLocaleString", "Intl."):
+        assert forbidden not in html

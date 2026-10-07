@@ -244,3 +244,28 @@ def test_every_emitted_number_is_finite(tmp_path):
     for path in out.glob("*.json"):
         for value in walk(json.loads(path.read_text())):
             assert np.isfinite(value), f"{path.name} contains a non-finite number: {value}"
+
+def test_a_tiny_p_value_survives_serialisation(tmp_path):
+    """A p-value must not be rounded to zero on its way to the report.
+
+    Rounding to a fixed number of decimal places is harmless for a win rate and destroys a p-value:
+    2.302e-07 becomes 0.0, and the report prints a p-value of zero for the one number that says whether
+    the result is real. The renderer showed `0.000e+00` in a KPI tile until this was fixed, which is the
+    kind of quiet deletion that a test on the arithmetic alone would never notice.
+    """
+    root = _synthetic_dataset(tmp_path, wins_p0=60, total=100)
+    out = tmp_path / "json"
+    build_all(root, out)
+    payload = json.loads((out / "price_of_information.json").read_text())
+
+    assert payload["delta"]["mcnemar"] > 0.0, "a p-value of zero would be indistinguishable from 'never computed'"
+    assert payload["delta"]["mcnemar"] > 1e-9, "the p-value lost its significant digits"
+
+
+def test_significant_digits_are_kept_for_small_and_large_values(tmp_path):
+    """The same function handles a win rate and a p-value without special-casing either."""
+    from analysis.queries import _round_for_output
+
+    assert _round_for_output(0.5412345678) == pytest.approx(0.541235, abs=1e-9)
+    assert _round_for_output(2.302e-07) == pytest.approx(2.302e-07, rel=1e-6)
+    assert _round_for_output(0.0) == 0.0

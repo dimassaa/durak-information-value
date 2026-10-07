@@ -359,11 +359,15 @@ def _jsonable(node):
 
 
 def _round_for_output(node, digits: int = 6):
-    """Round floats only at the moment of writing.
+    """Round floats only at the moment of writing, to SIGNIFICANT digits.
 
-    Rounding earlier would let a delta cross zero between the test and the report: the test would see
-    one number and the figure would show another. Six digits is display precision, not computation
-    precision, and the distinction is why the functions above never round.
+    Significant digits, not decimal places. Rounding to six decimal places is harmless for a win rate
+    and destroys a p-value: `2.302e-07` becomes `0.0`, so the report would print 0.000e+00 for the one
+    number that says whether the result is real. That is not a cosmetic bug -- it silently deletes the
+    significance of the headline.
+
+    Rounding earlier would let a delta cross zero between the test and the report, which is why the
+    functions above never round at all.
     """
     if isinstance(node, dict):
         return {k: _round_for_output(v, digits) for k, v in node.items()}
@@ -372,7 +376,9 @@ def _round_for_output(node, digits: int = 6):
     if isinstance(node, bool):
         return node
     if isinstance(node, float):
-        return round(node, digits)
+        if node == 0.0 or not math.isfinite(node):
+            return node
+        return float(f"%.{digits}g" % node)
     return node
 
 
