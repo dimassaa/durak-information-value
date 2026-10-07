@@ -335,6 +335,454 @@ def data_quality(dataset_dir) -> dict:
     }
 
 
+# --- reports 2 and 3 ----------------------------------------------------------------------
+#
+# Everything below reads LEVEL 1 only.
+#
+# That is a constraint, not a preference. The level-2 (`rounds`) and level-3 (`moves`) records carry
+# `(run_id, game_index)` and nothing else, while `game_index` is CELL-LOCAL: in the 57-cell primary
+# run each of the 20,000 indices occurs in all 57 cells, so 1,140,000 games share 20,000 indices.
+# `analysis/schema.sql` joins levels 2 and 3 to level 1 on `(run_id, game_index)`, which fans that
+# join out by 57 -- 39,073,046 round rows become 2,227,163,622. Every level-2 number is therefore an
+# average over 57 unrelated games, and no level-2 number can be attributed to a strategy at all.
+#
+# The level-1 columns are unaffected: they live on the game row, so a strategy's throw-ins and takes
+# are already per-game and need no join. So the rule these queries follow is: measure from level 1,
+# and if a quantity is only available at level 2, report that it is unavailable rather than report a
+# fan-out average as if it were a measurement. TRACKED IN IMPROVEMENTS.md.
+
+
+def pairwise_matchups(dataset_dir) -> dict:
+    """Every unordered pair of distinct strategies, both seat orders folded in, with a rate each.
+
+    This is the metric that does not depend on the tournament's composition: two strategies played
+    each other, so neither rate moved when a third strategy joined the field. That is what
+    `tournament_overview`'s marginal rates cannot say, and the reason this table exists beside them.
+
+    Self-play cells are held out of the rows and returned as `self_play`. `RANDOM` vs `RANDOM` is a
+    symmetry check on the engine -- its expected value is 0.5 by construction -- and printing it as a
+    matchup row would present the check as a measurement of `RANDOM`.
+    """
+    con = _connect(dataset_dir)
+    rows = con.execute("""
+        SELECT strategy_a, strategy_b, COUNT(*) AS games,
+               COUNT(*) FILTER (WHERE a_won) AS wins_a
+        FROM (
+            -- ONE ROW PER GAME, not per participation. Resolving the outcome to strategy `a` needs
+            -- to know which seat `a` occupied, and that is only knowable per game: unpivoting to
+            -- participants first and folding afterwards would count every matchup twice and halve
+            -- every rate's denominator along with it.
+            SELECT LEAST(strategy_p0, strategy_p1) AS strategy_a,
+                   GREATEST(strategy_p0, strategy_p1) AS strategy_b,
+                   CASE WHEN strategy_p0 < strategy_p1 THEN winner = 0 ELSE winner = 1 END AS a_won
+            FROM games WHERE winner >= 0 AND strategy_p0 <> strategy_p1
+        )
+        GROUP BY 1, 2 ORDER BY 1, 2
+    """).fetchall()
+
+    baselines = con.execute("""
+        SELECT strategy_id, COUNT(*) AS games, COUNT(*) FILTER (WHERE won) AS wins
+        FROM (
+            SELECT strategy_p0 AS strategy_id, winner = 0 AS won FROM games WHERE winner >= 0
+            UNION ALL
+            SELECT strategy_p1, winner = 1 FROM games WHERE winner >= 0
+        )
+        WHERE strategy_id IN (
+            SELECT strategy_p0 FROM games WHERE winner >= 0 AND strategy_p0 = strategy_p1
+        )
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    out = []
+    for strategy_a, strategy_b, games, wins_a in rows:
+        games, wins_a = int(games), int(wins_a)
+        wins_b = games - wins_a
+        out.append({
+            "strategy_a": int(strategy_a),
+            "strategy_b": int(strategy_b),
+            "games": games,
+            "wins_a": wins_a,
+            "wins_b": wins_b,
+            "win_rate_a": wins_a / games if games else None,
+            "ci_a": list(wilson_interval(wins_a, games)),
+            "win_rate_b": wins_b / games if games else None,
+            "ci_b": list(wilson_interval(wins_b, games)),
+        })
+
+    # A cell where BOTH seats held the same strategy is the only place "does seat 0 win more often"
+    # can be asked: with two different strategies the answer mixes the seat with the strength.
+    # Reported per strategy rather than pooled, because pooled it would not be comparable between
+    # strategies, and a reader checks symmetry on the RANDOM row.
+    return {
+        "metric": "pairwise_matchups",
+        "rows": out,
+        "self_play": [{
+            "strategy_id": int(sid),
+            "games": int(n),
+            "win_rate": int(w) / int(n) if n else None,
+            "ci": list(wilson_interval(int(w), int(n))) if n else None,
+        } for sid, n, w in baselines],
+        "note": "One row per unordered pair, both seat orders folded in, so neither rate moves when "
+                "the strategy palette changes. This is the metric to quote across studies; the "
+                "marginal rates in tournament_overview are not. The self_play rows are a seat check, "
+                "not matchups: a strategy against itself has no strength to measure.",
+    }
+
+
+def game_length(dataset_dir) -> dict:
+    """How long games run, over every participation.
+
+    Every game contributes two rows -- one per participant -- because a game has two players and a
+    length measured over `strategy_p0` alone would halve the denominator while describing half the
+    field. `participations` is therefore twice `games`, and is carried so a reader can check that.
+    """
+    con = _connect(dataset_dir)
+    total, mean_rounds, max_rounds = con.execute(
+        "SELECT COUNT(*), AVG(rounds), MAX(rounds) FROM games").fetchone()
+    percentiles = con.execute(
+        "SELECT quantile_cont(rounds, 0.50), quantile_cont(rounds, 0.95) FROM games").fetchone()
+
+    histogram = con.execute("""
+        SELECT (rounds / 5) * 5 AS bin_low, COUNT(*) AS games
+        FROM games GROUP BY 1 ORDER BY 1
+    """).fetchall()
+
+    per_strategy = con.execute("""
+        WITH participation AS (
+            SELECT strategy_p0 AS strategy_id, rounds FROM games
+            UNION ALL
+            SELECT strategy_p1 AS strategy_id, rounds FROM games
+        )
+        SELECT strategy_id, COUNT(*), AVG(rounds), quantile_cont(rounds, 0.95)
+        FROM participation GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    return {
+        "metric": "game_length",
+        "games": int(total),
+        "participations": int(total) * 2,
+        "mean_rounds": float(mean_rounds) if mean_rounds is not None else None,
+        "median_rounds": float(percentiles[0]) if percentiles[0] is not None else None,
+        "p95_rounds": float(percentiles[1]) if percentiles[1] is not None else None,
+        "max_rounds": int(max_rounds) if max_rounds is not None else None,
+        "bin_width_rounds": 5,
+        "histogram": [{"bin_low": int(lo), "games": int(n)} for lo, n in histogram],
+        "per_strategy": [{
+            "strategy_id": int(sid), "games": int(n),
+            "mean_rounds": float(mean), "p95_rounds": float(p95),
+        } for sid, n, mean, p95 in per_strategy],
+    }
+
+
+def throw_in_efficiency(dataset_dir) -> dict:
+    """Throw-ins made and cards beaten, per game, per strategy.
+
+    Both are divided by the games played. A raw count would be comparable only while every strategy
+    played the same number of games, and it stops being comparable the moment one of them sits out a
+    cell -- at which point the count reports the schedule rather than the strategy.
+    """
+    con = _connect(dataset_dir)
+    rows = con.execute("""
+        SELECT strategy_id, COUNT(*) AS games,
+               SUM(throw_ins) AS throw_ins, SUM(cards_beaten) AS cards_beaten,
+               SUM(cards_collected) AS cards_collected
+        FROM (
+            SELECT strategy_p0 AS strategy_id, throw_ins_p0 AS throw_ins,
+                   cards_beaten_p0 AS cards_beaten, cards_collected_p0 AS cards_collected
+            FROM games
+            UNION ALL
+            SELECT strategy_p1, throw_ins_p1, cards_beaten_p1, cards_collected_p1 FROM games
+        )
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    out = []
+    for sid, games, throw_ins, beaten, collected in rows:
+        games = int(games)
+        throw_ins, beaten, collected = int(throw_ins), int(beaten), int(collected)
+        out.append({
+            "strategy_id": int(sid),
+            "games": games,
+            "throw_ins": throw_ins,
+            "cards_beaten": beaten,
+            "cards_collected": collected,
+            "throw_ins_per_game": throw_ins / games if games else None,
+            "cards_beaten_per_game": beaten / games if games else None,
+            "cards_collected_per_game": collected / games if games else None,
+        })
+    return {
+        "metric": "throw_in_efficiency",
+        "rows": out,
+        "note": "Per game, not a raw count: a count tracks the number of games a strategy was "
+                "scheduled for, which is a property of the tournament and not of the strategy.",
+    }
+
+
+def take_behaviour(dataset_dir) -> dict:
+    """Voluntary and forced takes per strategy, kept apart.
+
+    A voluntary take is a choice the policy made; a forced take is the rules refusing to let a
+    defender continue. They are different facts about a strategy and are not additive into a single
+    "take rate": the average of the two is neither the rate of choosing to take nor the rate of being
+    forced to, and reporting it as one would make a strategy that takes compulsively look
+    indistinguishable from one that is cornered.
+    """
+    con = _connect(dataset_dir)
+    rows = con.execute("""
+        SELECT strategy_id, COUNT(*) AS games,
+               SUM(voluntary) AS voluntary, SUM(forced) AS forced,
+               SUM(cards_collected) AS cards_collected
+        FROM (
+            SELECT strategy_p0 AS strategy_id, voluntary_takes_p0 AS voluntary,
+                   forced_takes_p0 AS forced, cards_collected_p0 AS cards_collected
+            FROM games
+            UNION ALL
+            SELECT strategy_p1, voluntary_takes_p1, forced_takes_p1, cards_collected_p1 FROM games
+        )
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    out = []
+    for sid, games, voluntary, forced, collected in rows:
+        games = int(games)
+        voluntary, forced, collected = int(voluntary), int(forced), int(collected)
+        takes = voluntary + forced
+        out.append({
+            "strategy_id": int(sid),
+            "games": games,
+            "voluntary_takes": voluntary,
+            "forced_takes": forced,
+            "cards_collected": collected,
+            "takes_per_game": takes / games if games else None,
+            "voluntary_take_rate": voluntary / takes if takes else None,
+            "forced_take_rate": forced / takes if takes else None,
+        })
+    return {
+        "metric": "take_behaviour",
+        "rows": out,
+        "note": "A voluntary take is a policy choice and a forced take is a rules outcome. The two "
+                "are reported separately because their sum is not a rate of anything.",
+    }
+
+
+def wins_by_final_hand_size(dataset_dir) -> dict:
+    """The distribution of the LOSER's final hand, which is the degeneracy diagnostic.
+
+    `winner_final_hand` is not charted: the winner's hand is empty by the win condition, so its
+    distribution is a single spike at zero and carries no information. `winner_final_hand_is_always_
+    zero` records that the spike was checked rather than assumed -- if it ever reads False, the win
+    rule has changed and the report's framing needs revisiting.
+    """
+    con = _connect(dataset_dir)
+    decided = int(con.execute("SELECT COUNT(*) FROM games WHERE winner >= 0").fetchone()[0])
+    non_zero_winners = int(con.execute(
+        "SELECT COUNT(*) FROM games WHERE winner >= 0 AND winner_final_hand <> 0").fetchone()[0])
+
+    loser = con.execute("""
+        SELECT loser_final_hand AS final_hand, COUNT(*) AS games
+        FROM games WHERE winner >= 0 GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    return {
+        "metric": "wins_by_final_hand_size",
+        "games": decided,
+        "winner_final_hand_is_always_zero": non_zero_winners == 0,
+        "loser_hand": [{"final_hand": int(h), "games": int(n)} for h, n in loser],
+        "note": "The LOSER's final hand, because the winner's is empty by definition. A game that "
+                "ends with the opponent on one card was nearly over; one that ends with them on "
+                "twelve was not.",
+    }
+
+
+def endgame_degeneracy(dataset_dir) -> dict:
+    """How often a game is decided by a last card played before the defender can answer.
+
+    Spec 3.4: the win check runs the moment a card leaves the hand, so attacking with a single card
+    ends the game outright and the defender never gets to answer. This is stated by the design
+    rather than fixed by it, but a reader of a Durak result has to be able to see how much of the
+    dataset it decides.
+    """
+    con = _connect(dataset_dir)
+    total, single = con.execute("""
+        SELECT COUNT(*),
+               (COUNT(*) FILTER (WHERE win_from_single_card_p0)
+                + COUNT(*) FILTER (WHERE win_from_single_card_p1))
+        FROM games
+    """).fetchone()
+    by_strategy = con.execute("""
+        SELECT strategy_id, COUNT(*) AS games, SUM(single) AS single_card_wins
+        FROM (
+            SELECT strategy_p0 AS strategy_id, win_from_single_card_p0 AS single FROM games
+            UNION ALL
+            SELECT strategy_p1, win_from_single_card_p1 FROM games
+        )
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    total, single = int(total), int(single)
+    return {
+        "metric": "endgame_degeneracy",
+        "games": total,
+        "single_card_attack_wins": single,
+        "single_card_attack_win_rate": single / total if total else None,
+        "per_strategy": [{
+            "strategy_id": int(sid),
+            "games": int(n),
+            "single_card_wins": int(w),
+            "single_card_win_rate": int(w) / int(n) if n else None,
+        } for sid, n, w in by_strategy],
+        "note": "The win check runs before the defender responds, so a last-card attack ends the "
+                "game unanswered. The rate is a property of the documented rule set (spec 3.4), "
+                "not a defect, and it compresses the endgame.",
+    }
+
+
+def throw_in_limits(dataset_dir) -> dict:
+    """The empirical distribution of table attacks against the cap the engine enforces.
+
+    The cap is `min(defender's hand, THROWIN_CAP)` -- read from `durak.rules` rather than restated
+    here, so the report cannot quote a cap the engine does not use. The empirical side is the
+    observed maximum and how often play reaches it. `within_rule` compares the two: if it ever reads
+    False the engine is not applying the rule it documents, and the report says so rather than
+    drawing a histogram that agrees with the engine whatever the engine did.
+    """
+    from durak.rules import THROWIN_CAP
+
+    con = _connect(dataset_dir)
+    total, observed_max = con.execute(
+        "SELECT COUNT(*), MAX(max_attacks_in_a_round) FROM games").fetchone()
+    distribution = con.execute("""
+        SELECT max_attacks_in_a_round AS attacks, COUNT(*) AS games
+        FROM games GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    total = int(total)
+    observed_max = int(observed_max) if observed_max is not None else 0
+    return {
+        "metric": "throw_in_limits",
+        "games": total,
+        "rule_cap": int(THROWIN_CAP),
+        "rule_expression": "min(defender's current hand, THROWIN_CAP)",
+        "observed_max": observed_max,
+        "at_or_above_cap": sum(int(n) for a, n in distribution if int(a) >= THROWIN_CAP),
+        "within_rule": observed_max <= THROWIN_CAP,
+        "distribution": [{"attacks": int(a), "games": int(n)} for a, n in distribution],
+    }
+
+
+def deck_split(dataset_dir) -> dict:
+    """Win rates per deck, for the sensitivity check, and an honest account of what is missing.
+
+    The plan's 36/52 split is a sensitivity analysis and only exists where both decks were played.
+    A deck that was not run is listed in `missing_decks` rather than emitted with a rate of zero:
+    a zero on a chart reads as "measured, and it is zero", which is a different and false claim.
+    """
+    con = _connect(dataset_dir)
+    present = [int(r[0]) for r in con.execute(
+        "SELECT DISTINCT deck_size FROM games ORDER BY 1").fetchall()]
+
+    rows = []
+    for deck_size in present:
+        strategies = con.execute(f"""
+            SELECT strategy_id, COUNT(*) AS games,
+                   COUNT(*) FILTER (WHERE won) AS wins
+            FROM (
+                SELECT strategy_p0 AS strategy_id, winner = 0 AS won
+                FROM games WHERE deck_size = {deck_size} AND winner >= 0
+                UNION ALL
+                SELECT strategy_p1, winner = 1
+                FROM games WHERE deck_size = {deck_size} AND winner >= 0
+            )
+            GROUP BY 1 ORDER BY 1
+        """).fetchall()
+        # Counted from the game rows, not by summing the per-strategy denominators: a game has two
+        # participants, so the sum is twice the number of games and would report a deck as having
+        # been played twice as often as it was.
+        games = int(con.execute(
+            f"SELECT COUNT(*) FROM games WHERE deck_size = {deck_size} AND winner >= 0"
+        ).fetchone()[0])
+        rows.append({
+            "deck_size": deck_size,
+            "games": games,
+            "participations": sum(int(n) for _sid, n, _w in strategies),
+            "strategies": [{
+                "strategy_id": int(sid),
+                "games": int(n),
+                "wins": int(w),
+                "win_rate": int(w) / int(n) if n else None,
+            } for sid, n, w in strategies],
+        })
+    con.close()
+
+    return {
+        "metric": "deck_split",
+        "rows": rows,
+        "missing_decks": [size for size in (36, 52) if size not in present],
+        "note": "Rates are marginal within a deck, so they depend on that deck's field. Where only "
+                "one deck was played, the sensitivity check has not been run and is listed as "
+                "missing rather than reported as a zero.",
+    }
+
+
+def rule_variant_comparison(sweep_dir) -> dict:
+    """The `throwin_defense_ranks` sweep, read from the two datasets the sweep wrote.
+
+    The throw-in rule is a genuine ambiguity in the source document rather than a tuning knob, and
+    every throw-in statistic in the dataset depends on which reading was applied. `durak.
+    analysis.sweeps.rule_variant_sweep` writes one dataset per reading; this reads both back
+    through the same view machinery as everything else, so the two rates are computed exactly the
+    way the rest of the numbers are.
+
+    `available` is False when the sweep has not been run. A missing sweep and a measured zero look
+    identical on a chart, so the report needs to be able to tell them apart.
+    """
+    from durak.strategies import SEARCH_UNIFORM
+
+    root = Path(sweep_dir)
+    variants = []
+    for flag in (False, True):
+        # The sweep names its output `rule_1` for True and `rule_0` for False.
+        target = root / f"rule_{int(flag)}"
+        if not (target / "games").exists():
+            continue
+        con = _connect(target)
+        trials, wins = con.execute(f"""
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE won)
+            FROM (
+                SELECT strategy_p0 = {SEARCH_UNIFORM} AS is_arm, winner = 0 AS won
+                FROM games WHERE winner >= 0
+                UNION ALL
+                SELECT strategy_p1 = {SEARCH_UNIFORM}, winner = 1 FROM games WHERE winner >= 0
+            )
+            WHERE is_arm
+        """).fetchone()
+        con.close()
+        trials, wins = int(trials), int(wins)
+        variants.append({
+            "throwin_defense_ranks": bool(flag),
+            "games": trials,
+            "wins": wins,
+            "win_rate": wins / trials if trials else None,
+            "ci": list(wilson_interval(wins, trials)) if trials else None,
+        })
+
+    return {
+        "metric": "rule_variant_comparison",
+        "available": bool(variants),
+        "variants": variants,
+        "note": "Two readings of the throw-in rule, each measured in its own tournament. The rates "
+                "carry their own denominators because a bare pair of numbers invites a reader to "
+                "difference them without asking whether the gap exceeds the sampling noise.",
+    }
+
+
 def _jsonable(node):
     """Recursively convert NumPy scalars and reject non-finite floats.
 
@@ -382,11 +830,17 @@ def _round_for_output(node, digits: int = 6):
     return node
 
 
-def build_all(dataset_dir, out_dir) -> list:
+def build_all(dataset_dir, out_dir, sweeps_dir=None) -> list:
     """Run every query and write one JSON document per report, plus `meta.json`.
 
     Returns the written paths. `meta.json` carries the run's identity -- versions, counts, settings --
     because a report whose numbers cannot be traced to a rule set and a seed is not citable.
+
+    `sweeps_dir` is where `durak.analysis.sweeps.rule_variant_sweep` wrote its output, if it was
+    run. It is optional and its absence is recorded rather than raised: the rule-variant comparison
+    is a sensitivity analysis, and a dataset without it should still produce a full set of
+    aggregates with the comparison marked unavailable. `build_all` is not the thing that decides
+    whether a sweep was run.
     """
     dataset_dir = Path(dataset_dir)
     out_dir = Path(out_dir)
@@ -398,11 +852,23 @@ def build_all(dataset_dir, out_dir) -> list:
         "rules_and_dealing": rules_and_dealing,
         "data_quality": data_quality,
         "opponent_independent_strength": opponent_independent_strength,
+        "pairwise_matchups": pairwise_matchups,
+        "game_length": game_length,
+        "throw_in_efficiency": throw_in_efficiency,
+        "take_behaviour": take_behaviour,
+        "wins_by_final_hand_size": wins_by_final_hand_size,
+        "endgame_degeneracy": endgame_degeneracy,
+        "throw_in_limits": throw_in_limits,
+        "deck_split": deck_split,
     }
+    # The rule-variant sweep reads two other datasets rather than this one, so it is the only
+    # document whose input is not `dataset_dir`.
+    extra = {"rule_variant_comparison": lambda _dataset: rule_variant_comparison(
+        sweeps_dir if sweeps_dir is not None else dataset_dir / "__no_sweeps__")}
 
     written = []
     payloads = {}
-    for name, query in reports.items():
+    for name, query in {**reports, **extra}.items():
         payload = _jsonable(query(dataset_dir))
         payloads[name] = _round_for_output(payload)
         path = out_dir / f"{name}.json"

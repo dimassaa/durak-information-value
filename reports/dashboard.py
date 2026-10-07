@@ -125,6 +125,22 @@ class Document:
         or not they read anything else."""
         self._sections.append(("quality", dict(sorted(flags.items()))))
 
+    def note_block(self, title: str, text: str) -> "Document":
+        """A caveat or an interpretive note, placed WHERE it belongs rather than at the end.
+
+        Separate from :meth:`quality_block` because a quality block is a list of flags under a fixed
+        "Data quality" heading, and using it for prose put six headings reading "Data quality" on
+        report 3 -- over statements about what the rules mean, which are not data-quality findings
+        at all. A reader scanning for caveats would find them filed under the wrong heading, which
+        is the same as hiding them.
+
+        Position is preserved because a caveat is only useful next to the number it qualifies. The
+        lower-bound caveat on report 1 already depends on that: separated from its delta by a
+        screen of charts, it would be read later or not at all.
+        """
+        self._sections.append(("note", {"title": title, "text": text}))
+        return self
+
     # --- rendering --------------------------------------------------------------
 
     def _render_section(self, kind: str, payload) -> str:
@@ -173,6 +189,10 @@ class Document:
                 for k, v in payload.items()
             )
             return f'<section class="quality"><h2>Data quality</h2><div>{items}</div></section>'
+
+        if kind == "note":
+            return (f'<section class="note"><h2>{_e(payload["title"])}</h2>'
+                    f'<p>{_e(payload["text"])}</p></section>')
 
         raise ValueError(f"unknown section kind {kind!r}")
 
@@ -251,6 +271,13 @@ th[data-sort-key] {{ cursor: pointer; color: var(--color-accent1); }}
 th[data-sort-key]::after {{ content: " \\2195"; opacity: .5; }}
 tbody tr:hover {{ background: var(--bg-header); }}
 .quality {{ background: var(--bg-card); padding: 16px; border-radius: var(--radius);
-  border-left: 3px solid var(--color-accent2); }}
+  border-left: 3px solid var(--color-accent2); margin-bottom: var(--gap); }}
 .quality h2 {{ font-size: 15px; margin: 0 0 10px; }}
+/* A caveat reads as prose, not as a flag, and is marked on the left edge in the accent colour so it
+   is scannable without being mistaken for a data-quality finding. */
+.note {{ background: var(--bg-card); padding: 14px 16px; border-radius: var(--radius);
+  border-left: 3px solid var(--color-accent3); margin-bottom: var(--gap); }}
+.note h2 {{ font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-accent3); }}
+.note p {{ margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-primary); }}
 """

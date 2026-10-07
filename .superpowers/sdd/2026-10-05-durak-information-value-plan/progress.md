@@ -937,3 +937,129 @@ Task 18 housekeeping: `test_invariants_hold_after_every_transition_at_scale` cut
   and the history is recorded in the test's docstring. This test is a smoke check; the project's actual
   correctness guarantee is the compiled-vs-interpreted bit-for-bit comparison in
   `tests/test_equivalence.py`.
+
+
+# Task 21 — Reports 2-3 and figures
+
+## What was built
+
+Two HTML dashboards and six PNG figures, all built from the aggregate JSON, no numbers
+computed in the report layer.
+
+    reports/out/02_tournament_overview.html   matchup matrix, marginal vs RANDOM-only rates,
+                                             game length, throw-in and take profiles
+    reports/out/03_rules_and_dealing.html     degenerate endgame FIRST, then trumps, throw-in
+                                             limits vs the written rule, rule-variant sensitivity
+    reports/out/figures/*.png                 six figures for the README
+
+New modules: `reports/figures.py`. New primitive: `Document.note_block` in
+`reports/dashboard.py`. New queries in `analysis/queries.py`: `pairwise_matchups`,
+`game_length`, `throw_in_efficiency`, `take_behaviour`, `wins_by_final_hand_size`,
+`endgame_degeneracy`, `throw_in_limits`, `deck_split`, `rule_variant_comparison`.
+`build_all` takes an optional `sweeps_dir`; `build_all` now also runs `deck_split`.
+
+## DETERMINISM: verified
+
+Two builds from the same JSON, two seconds apart, `diff -r` clean on all nine files.
+Three HTML plus six PNG, SHA-256 identical. No `new Date`, no `toLocaleString`, no `Intl.`
+in any output. Chart.js pinned at 4.5.1 in all three files.
+
+PNG determinism needed one deliberate choice: the Matplotlib version string is NOT written
+into the file. Leaving it in would mean every toolchain upgrade changed every committed
+figure with identical data — the same class of leak as a floating CDN tag.
+
+## Tests
+
+`tests/test_queries.py` +35, `tests/test_reports.py` +26. 427 passed, 1 skipped across
+the suite excluding `test_search.py` and `test_leaf.py`, which another agent is editing
+right now. `test_search.py::test_stopping_still_wins_when_the_defender_would_grow_even_after_a_beat`
+fails on their in-flight search change, not on anything here — this work touches no file
+under `durak/`.
+
+## THE SEARCH WEAKNESS IS ON THE PAGE, NOT BURIED
+
+Measured pairwise on the 1.14M dataset: `SEARCH_UNIFORM vs GREEDY` and
+`SEARCH_INFORMED vs GREEDY` are both 0.000325 (13 wins in 40,000). A depth-1 search loses
+essentially every game to a plain heuristic. Report 2 leads with that sentence, states that
+it is a finding about the *policies* and not the engine, and states that report 1's price of
+information is unaffected because a weakness shared by both arms cancels out of a
+comparison between them. Nothing was tuned to make this look better.
+
+Report 2 also separates the two rate kinds explicitly: marginal rates move with the
+palette and cannot be compared across studies; the RANDOM-only rate can. Both are on the
+page, labelled, never under one heading.
+
+## FOUR DATA DEFECTS FOUND — NOT SMOOTHED OVER
+
+Recorded in `IMPROVEMENTS.md` 41-44. Two are serious.
+
+**1. `game_index` is CELL-LOCAL, so every level-2 and level-3 number in the dataset is
+wrong.** The 57-cell run has 1,140,000 games over only 20,000 distinct
+`(run_id, game_index)` pairs — each cell reuses indices 0..19999. The true key is
+`(run_id, pairing_index, game_index)`, unique across all 1,140,000 rows. But levels 2 and 3
+carry no `pairing_index`, so `analysis/schema.sql`'s join fans out by 57: 39,073,046 round
+rows become **2,227,163,622**, and 4,717,176 move rows become **268,879,032**. Every
+round- or move-level aggregate is an average over 57 unrelated games and none can be
+attributed to a strategy. Proven by running a single-pairing tournament, where the fan-out
+disappears — so it is the missing key, not a wrong one. `round_phases` is affected.
+
+Consequence for this task: **all new queries read level 1 only.** Every quantity the plan
+asks for — throw-ins, takes, trumps, game length, final hand sizes, throw-in limits — lives
+on the game row, where it is already per-game and needs no join. A test asserts no report
+query mentions `rounds` or `moves`, so this cannot be undone silently.
+
+**2. `rules_and_dealing`'s `first_attacker_p0_wins` / `first_attacker_p1_wins` count SEAT
+wins, not first-attacker wins.** They read 570,154 / 569,846 — a clean 50/50, which reads as
+"the first attacker wins half its games". The dataset's real first-attacker win rate is
+**0.47999**: the first attacker *loses* about half again as often as it wins. Under the run's
+only regime, `RULE_DERIVED`, the first attacker is decided by the rules and is not seat 0.
+Report 3 states this on the page instead of repeating the count; the field names should be
+changed.
+
+**3. `ROUND_DTYPE.n_attacks` is 1 in all 39,073,046 rows.** Not a counter bug — throw-ins
+are counted separately in `n_throw_ins` and a round opens with one attack — but the name
+invites "cards laid in this round". The level also emits one extra record per game
+(39,073,046 rows against `sum(games.rounds)` = 37,933,046, exactly one per game).
+
+**4. Two planned sensitivity checks were never run.** The primary dataset played the 36-card
+deck only, so the 36/52 split does not exist; and `throwin_defense_ranks` had no sweep. Both
+are now reported as **unmeasured** rather than zero. A zero on a chart reads as "measured,
+and it is zero", which is a different and false claim. `deck_split` emits `missing_decks`,
+`rule_variant_comparison` emits `available: false`, and the pages render prose in their
+place.
+
+## THE RULE-VARIANT SWEEP, ACTUALLY RUN
+
+`rule_variant_sweep` had never been run. Ran it: 2000 games/cell, ~127 s.
+
+    throwin_defense_ranks=False   0.19175  (4000 games, Wilson 0.1798-0.2042)
+    throwin_defense_ranks=True    0.27075  (4000 games, Wilson 0.2572-0.2847)
+
+A 7.9-point swing, intervals well separated. Report 3 closes with it and states plainly that
+the two readings ran in **separate tournaments**, so this is not a paired test.
+
+## THE HEADLINE ON REPORT 3
+
+`endgame_degeneracy`: **87.9% of all games are decided by a single-card attack** — the win
+check runs before the defender can respond, so the endgame is largely unanswered. Per
+strategy it runs from 0.72 (`AUTO_DEFEND`) down to 0.26 (`CONSERVATIVE`). This is spec 3.4's
+documented rule set, not a defect, but it is the single largest distortion in the project
+and it now leads report 3 as the plan requires.
+
+Also worth flagging: the **RANDOM vs RANDOM** self-play cell reads 0.5039 with its Wilson
+interval containing 0.5 — the seat-symmetry check passes. It is reported as a seat check, not
+as a matchup, because a strategy against itself has no strength to measure.
+
+## A DESIGN CHANGE WORTH REVIEWING
+
+Added `Document.note_block`. Caveats were being emitted through `quality_block`, which put a
+heading reading **"Data quality"** above every one of them — report 3 had six. A caveat
+filed as a data-quality finding is either skipped by a reader auditing the run or read as a
+defect in it. Notes keep their position on the page (a caveat is only useful next to the
+number it qualifies) and render as prose. `quality_block` is now used once per report.
+
+## NOT DONE
+
+The 52-card deck and the `RANDOM`-only re-run were never played, so those panels report
+themselves missing. The full `pytest` run has one failure in `test_search.py` from another
+agent's in-flight change to `durak/search.py`.
