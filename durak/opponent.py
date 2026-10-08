@@ -72,6 +72,8 @@ asymmetrically.
 
 from __future__ import annotations
 
+import os
+
 from typing import NamedTuple
 
 import numpy as np
@@ -103,6 +105,13 @@ class Observation(NamedTuple):
     soft_delta: float = 0.0
 
 
+#: How many played cards a model remembers, in cards discarded. `int` default is effectively unlimited and
+#: reproduces the project's earlier behaviour exactly; set `DURAK_MEMORY_PLY` to bound it. Read at import
+#: for the same reason as `SEARCH_DEPTH`: `@njit` freezes module globals at compile time, so a sweep over
+#: this value would otherwise measure the same policy at every setting.
+MEMORY_PLY = int(os.environ.get("DURAK_MEMORY_PLY", "1000000"))
+
+
 @njit(cache=True)
 def _unseen_into(state, observer: int, out: np.ndarray) -> int:
     """Fill `out` with the cards `observer` cannot account for, returning the count.
@@ -119,7 +128,16 @@ def _unseen_into(state, observer: int, out: np.ndarray) -> int:
         seen |= _ONE << np.uint64(state.table_attacks[i])
     for i in range(state.table_defense_count):
         seen |= _ONE << np.uint64(state.table_defenses[i])
-    for i in range(state.discard_len):
+    # The discard pile, bounded by the memory horizon. Every model previously accounted for EVERY card
+    # ever played, so the candidate set shrank monotonically and the beliefs were perfect-memory -- which
+    # makes "what is perfect knowledge of the hand worth" a question about bookkeeping at least as much
+    # as about the opponent. `MEMORY_PLY` plies back is remembered; anything older goes back into the
+    # candidate set, and the filter must then place it somewhere, which is the uncertainty being modelled.
+    # `MEMORY_PLY` at its default reproduces the old behaviour EXACTLY, which is the regression gate.
+    first_remembered = state.discard_len - MEMORY_PLY
+    if first_remembered < 0:
+        first_remembered = 0
+    for i in range(first_remembered, state.discard_len):
         seen |= _ONE << np.uint64(state.discard[i])
 
     count = 0

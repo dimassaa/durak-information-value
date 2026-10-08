@@ -70,6 +70,14 @@ PARTICLE_COUNT = 100
 # the alternative silently runs every depth at the first one compiled.
 SEARCH_DEPTH = int(os.environ.get("DURAK_SEARCH_DEPTH", "2"))
 
+#: Evaluation weights, read from configuration for the same reason `SEARCH_DEPTH` is: `@njit` freezes
+#: module globals at compile time, so a twelve-variant sweep over a module constant would measure the
+#: same policy twelve times. That is not a hypothetical -- it is exactly what flattened the depth sweep.
+#:
+#: Comma-separated, five terms, in `durak.evaluation.EVAL_WEIGHTS` order: card count, trumps, high cards,
+#: role, deck exhausted. The default is the incumbent, so an unset variable changes nothing.
+WEIGHTS = tuple(float(x) for x in os.environ.get("DURAK_EVAL_WEIGHTS", "1.0,2.0,0.5,0.3,1.5").split(","))
+
 #: Pinned spellings of the two information modes, so callers need not import the enum to say which arm
 #: they mean. Named here rather than at the call site because "the arm with the real hand" is the single
 #: most consequential constant in the project and it should appear in exactly one place.
@@ -189,4 +197,4 @@ def policy_search(state: GameState, player: int, strategy_id: int, info_mode: in
     # -----------------------------------------------------------------------------
 
     # One search, one set of parameters, both arms.
-    return _expectimax(state, player, particles, hypo_decks, EVAL_WEIGHTS, SEARCH_DEPTH)
+    return _expectimax(state, player, particles, hypo_decks, WEIGHTS, SEARCH_DEPTH)
