@@ -51,13 +51,13 @@ sweep. Weights must arrive per run, from configuration, and be recorded in the m
 
 ## Phase B — the experiments
 
-### R1. Depth curve {1, 2, 3, 4, 5}
+### R1. Depth curve {1, 2, 3, 4}
 
 | | |
 |---|---|
 | question | does the information effect fall, stay flat, or turn around with depth? |
 | config | one fixed seed per depth, **cache cleared before each**, `SEARCH_DEPTH` from `DURAK_SEARCH_DEPTH` |
-| scale | 4,000 games per depth per direction at depths 1–3; depth 4–5 as compute allows, stated |
+| scale | games per direction **falling with depth**, because cost rises by the branching factor (~4.80) per ply: 2000 / 1000 / 500 / 250. Equal counts would take about five hours; this buys the sign at every depth and the precision achieved is printed, not assumed |
 | also measured | win rate against `GREEDY`, `AUTO_DEFEND`; take rate; final hand; wall clock |
 | decides | H1 and H2 in `RESEARCH.md`. Whether any headline number can be published at all |
 | precedent | depths 1–3 gave −0.0120, −0.0580, −0.0840 on the pre-deck-hiding model: monotone, not turning around |

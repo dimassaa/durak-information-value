@@ -19,17 +19,22 @@ search roughly **twelve times stronger** against `GREEDY` (0.0057 → 0.0685). W
 saw future draws and committed confidently to lines the opponent could disrupt; with it hidden the beliefs
 are calibrated. Every earlier number measured a pathological policy.
 
-**The cost problem.** Depth 1 costs about 2 minutes at 4,000 games; each further ply multiplies by the
-branching factor, about 5. Depths 1–4 is roughly **five hours**; depth 5 is about a day and is not worth a
-day. The curve is already running as depths 1–4, so:
+**The cost problem, and what was decided.** Depth 1 costs about 2 minutes at 4,000 games and each further
+ply multiplies by the branching factor, about 5. Equal game counts would make depths 1-4 roughly **five
+hours**, which is not available, and depth 5 would be about a day.
 
-**Gate.** If depth 4 has not finished within six hours, **kill the run**, re-run depths 1–3 at 4,000 games
-and depth 4 at 1,000, and state the reduced precision. A truncated curve with a stated width beats a curve
-that arrives never.
+**Depth 5 is dropped from the research entirely.** Not deferred, not "as compute allows" -- removed. The
+question the curve answers is whether the effect turns around as the policy gets stronger, and depth 4 is
+already far beyond the point where the policy beats even `AUTO_DEFEND`; a fifth ply would answer nothing the
+fourth has not, at twenty-five times the cost.
 
-**Decide.** Whether the effect turns around at depth 3–4 (H2). If it does, depth becomes the headline axis
-and R3 waits. If it keeps falling, the honest conclusion is already forming and the weight sweep becomes the
-decisive experiment.
+**Scale actually used**, games per direction, falling with depth: **2000 / 1000 / 500 / 250**. This buys the
+SIGN at every depth and gives the deep ones a wide interval, and that is the honest trade: a stated width is
+useful, a five-hour wait is not. The interval achieved is printed per depth rather than assumed.
+
+**Gate.** Every depth must print an interval, and the depth-4 interval must be reported as the weak point of
+the curve rather than glossed. If depth 4's interval is too wide to separate the sign, say so and stop at
+depth 3 -- a three-point curve with usable intervals beats a four-point curve whose last point is noise.
 
 ---
 
