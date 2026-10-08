@@ -454,16 +454,29 @@ def informativeness(particles: np.ndarray, unseen: np.ndarray, deck_size: int = 
 def distinct_hypotheses(particles: np.ndarray) -> int:
     """How many DIFFERENT hypotheses the particle set actually contains.
 
-    Particle depletion is the reason a posterior spread is not a standard error. A filter that keeps
-    only the hypotheses consistent with what has been seen collapses over time -- every surviving
-    hypothesis can converge to one hand, and then averaging over "100 particles" is averaging over one
-    belief with a hundred copies. Quoted uncertainty built on the spread alone is uncalibrated in exactly
-    the direction that matters, because the search becomes confident while it is not.
+    Two things make this smaller than the `k` that was drawn. Drawn hands collide: the draw is with
+    replacement from the candidate set, so late in a game -- when the opponent holds two cards out of
+    a handful of unseen -- a hundred draws can carry far fewer than a hundred distinct hands. And the
+    candidate set is itself an approximation, because `_unseen_into` sees only the last `MEMORY_PLY`
+    discarded cards.
 
-    This is the count that makes the spread interpretable, and it is the missing companion to every
-    interval in the project's reports. Rows arrive sorted (see `_draw_particles`), so duplicates are
-    adjacent and the scan is linear; unsorted input would report a count near `k` no matter how
-    concentrated the set is.
+    Note what is NOT the cause, because it was the obvious wrong answer here. `update_particles` below
+    does exhibit accumulated depletion -- a set carried across decisions filters down and resamples,
+    and `docs` records that measured at roughly 480 distinct hypotheses under 20000 particles. The live
+    search does not use it. `policy_search` rebuilds the set from scratch on every call, so there is no
+    carry-over to deplete and this count measures single-draw collision, not accumulated collapse.
+
+    Measured on 150 games of the uniform arm at the default memory horizon: 78.91 distinct hypotheses
+    per decision against a nominal 100, range 61.13 to 89.93, never below 50. So the nominal budget
+    overstates the search's real resolution by about a fifth, and this is the number that says so.
+
+    It also does not calibrate any interval the reports quote. Those are a paired bootstrap and a
+    McNemar test over game OUTCOMES, and no property of the search's internal belief can bias a
+    resampling interval over who won. An earlier note in this codebase claimed the opposite; it
+    conflated the search's internal uncertainty with the estimator's sampling uncertainty.
+
+    Rows arrive sorted within each row (see `_draw_particles`), so duplicates are adjacent and the scan
+    is linear; unsorted input would report a count near `k` no matter how concentrated the set is.
     """
     k = particles.shape[0]
     if k == 0:

@@ -27,7 +27,7 @@
 -- is why the macros exist as named constants rather than as literals sprinkled through the queries.
 CREATE OR REPLACE MACRO current_engine_version() AS 2;
 CREATE OR REPLACE MACRO current_rules_version() AS 2;
-CREATE OR REPLACE MACRO current_schema_version() AS 3;
+CREATE OR REPLACE MACRO current_schema_version() AS 4;
 
 -- Where the dataset lives: `SET VARIABLE dataset_root = '/path/to/run';` before reading this file.
 -- A macro over the variable rather than a literal, so pointing the views at another run is one command

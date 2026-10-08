@@ -209,7 +209,7 @@ fans out by 57 and nothing can be attributed to a strategy.
 | delta across the weight space | decides whether +0.08 is a number or a range |
 | delta across the rule readings | decides H3 |
 | delta by trump composition | H4 |
-| distinct-hypothesis count for the particle filter | particle depletion means posterior spread is not a standard error, so any quoted uncertainty is uncalibrated |
+| distinct-hypothesis count for the particle filter | DONE at schema 4: `distinct_hypotheses_sum / search_decisions`, measured at 78.91 against a nominal 100, so the budget overstates real resolution by about a fifth. It bounds the search's resolution; it does not touch any quoted interval |
 | time-to-empty-hand per strategy | the direct measure of what the game rewards, and it is cheap |
 
 ---

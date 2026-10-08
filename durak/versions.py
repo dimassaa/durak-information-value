@@ -21,4 +21,4 @@ ENGINE_VERSION = 2
 RULES_VERSION = 2
 # 2: level-1 rows gained `pairing_index` and `first_attacker_regime`. Both were absent, so a dataset
 # carrying several regimes could not be read by regime at all. Pre-fix datasets lack the columns.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4

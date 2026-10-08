@@ -178,6 +178,14 @@ _GAME_STATE_SPEC = [
     ("rng_state", types.uint64),
     ("rng_p0", types.uint64),
     ("rng_p1", types.uint64),
+    # How much resolution the search actually had, accumulated over its decisions: the total number
+    # of DISTINCT opponent-hand hypotheses it averaged over, and how many decisions it made. Kept on
+    # the state for the same reason the player streams are -- a policy returns only its action, so a
+    # number it wants to report has nowhere else to travel. Both are zero when no particle strategy
+    # played; see `tests/test_hypothesis_count.py` for why a per-game MINIMUM was measured and
+    # rejected, and why these two are kept rather than a mean.
+    ("distinct_hypotheses_sum", types.int64),
+    ("search_decisions", types.int64),
 ]
 
 
@@ -221,6 +229,8 @@ class GameState:
         self.rng_state = np.uint64(1)
         self.rng_p0 = np.uint64(1)
         self.rng_p1 = np.uint64(1)
+        self.distinct_hypotheses_sum = 0
+        self.search_decisions = 0
 
 
 def settings_from_config(settings) -> RuleTunables:

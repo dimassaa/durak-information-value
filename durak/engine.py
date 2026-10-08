@@ -173,6 +173,12 @@ def _build_game_dtype():
         # but a dataset that silently dropped rows would be indistinguishable from a complete
         # one, so truncation of levels 2 and 3 is recorded here.
         ("flag_round_records_truncated", "?"), ("flag_move_records_truncated", "?"),
+        # Search-resolution diagnostics. Added at schema version 4: the total number of distinct
+        # opponent-hand hypotheses the search averaged over, and the number of decisions it made, so
+        # their ratio is the effective hypotheses per decision. A dataset could previously report
+        # `PARTICLE_COUNT` as a fact about the search's resolution when it was only a fact about how
+        # many draws it made. Both zero when no particle strategy played.
+        ("distinct_hypotheses_sum", "i8"), ("search_decisions", "i8"),
     ])
 
 
@@ -545,6 +551,8 @@ def _play_one(outcomes, row_index, rounds, moves, rounds_start, moves_start, run
     row["win_from_single_card_p1"] = win_from_single[1]
 
     row["max_attacks_in_a_round"] = max_attacks
+    row["distinct_hypotheses_sum"] = state.distinct_hypotheses_sum
+    row["search_decisions"] = state.search_decisions
     row["flag_round_cap_hit"] = cap_hit
     row["flag_illegal_move"] = illegal
     row["flag_card_conservation_violation"] = conservation_broken

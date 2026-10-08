@@ -105,6 +105,9 @@ def level1_schema() -> pa.Schema:
         # a bounded dataset would be indistinguishable from a complete one.
         pa.field("flag_round_records_truncated", pa.bool_()),
         pa.field("flag_move_records_truncated", pa.bool_()),
+        # Search resolution. Added in schema version 4; see the dtype comment in `engine.py`.
+        pa.field("distinct_hypotheses_sum", pa.int64()),
+        pa.field("search_decisions", pa.int64()),
     ])
 
 

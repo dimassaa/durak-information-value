@@ -49,7 +49,7 @@ from durak.actions import (
     action_kind,
 )
 from durak.evaluation import EVAL_WEIGHTS
-from durak.opponent import _draw_particles, _unseen_into
+from durak.opponent import _draw_particles, _unseen_into, distinct_hypotheses
 from durak.rng import next_below
 from durak.strategies.base import InfoMode
 from durak.rules import GameState
@@ -195,6 +195,15 @@ def policy_search(state: GameState, player: int, strategy_id: int, info_mode: in
         particles = _prior_particles(state, opponent, PARTICLE_COUNT, np.uint64(rng_state))
     hypo_decks = _deck_hypotheses(state, particles, player, np.uint64(rng_state))
     # -----------------------------------------------------------------------------
+
+    # Report how much resolution this decision actually had. Drawn hands collide once the candidate
+    # set shrinks, and the candidate set is itself memory-bounded, so a hundred draws can carry far
+    # fewer than a hundred distinct beliefs -- and the search then averages over fewer of them than
+    # `PARTICLE_COUNT` claims. Accumulated as a sum and a count rather than a minimum: a per-game
+    # minimum is always 1, because the endgame has genuinely one admissible hand and the search is
+    # then certain for the right reason.
+    state.distinct_hypotheses_sum += distinct_hypotheses(particles)
+    state.search_decisions += 1
 
     # One search, one set of parameters, both arms.
     return _expectimax(state, player, particles, hypo_decks, WEIGHTS, SEARCH_DEPTH)

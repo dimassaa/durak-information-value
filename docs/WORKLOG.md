@@ -152,9 +152,12 @@ These are not done. Each is recorded rather than quietly dropped.
 5. **`informativeness` is blind to asymmetry.** It is the entropy of the *normalised* marginal, so a
    filter that knows the hand exactly scores the same as one that knows nothing. The phase curve is
    suggestive, not proof.
-6. **No diversity diagnostic for the particle filter.** Particle depletion means posterior spread is not
-   a standard error; any report quoting uncertainty needs a distinct-hypothesis count alongside it, and
-   none exists.
+6. **No diversity diagnostic for the particle filter.** Resolved at schema version 4: level 1 now records
+   `distinct_hypotheses_sum` and `search_decisions`, whose ratio is the effective hypotheses per
+   decision. Measured at 78.91 against a nominal 100. Note the original diagnosis was wrong in its
+   mechanism -- accumulated depletion belongs to `update_particles`, which the search does not call --
+   and wrong in its consequence, since a resampling interval over game outcomes cannot be biased by a
+   property of the search's internal belief.
 
 ## 5. The through-line
 
