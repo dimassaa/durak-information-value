@@ -23,6 +23,7 @@ from durak.strategies.policies import (
 )
 from durak.strategies.cheater_doc import policy_cheater_doc
 from durak.strategies.conservative import policy_conservative
+from durak.strategies.oracle import policy_oracle, policy_oracle_uniform
 from durak.strategies.search_policy import policy_search
 
 # Keyed by the pinned integer, not the enum member, so the dispatch inside compiled code is a
@@ -43,6 +44,11 @@ _POLICIES = {
     # Sharing the code would make the document's specification unmeasurable: the two would agree only
     # because they are one function.
     int(StrategyId.CHEATER_DOC): policy_cheater_doc,
+    # The ceiling arm. Shares `_expectimax`, `_truth_particles` and the weights with `policy_search`,
+    # and differs in the depth it passes -- see durak/strategies/oracle.py for why the deck order is
+    # not a second axis here.
+    int(StrategyId.ORACLE): policy_oracle,
+    int(StrategyId.ORACLE_UNIFORM): policy_oracle_uniform,
 }
 
 _NAMES = {
@@ -54,6 +60,8 @@ _NAMES = {
     int(StrategyId.SEARCH_UNIFORM): "SEARCH_UNIFORM",
     int(StrategyId.SEARCH_INFORMED): "SEARCH_INFORMED",
     int(StrategyId.CHEATER_DOC): "CHEATER_DOC",
+    int(StrategyId.ORACLE): "ORACLE",
+    int(StrategyId.ORACLE_UNIFORM): "ORACLE_UNIFORM",
 }
 
 

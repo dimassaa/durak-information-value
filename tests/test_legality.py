@@ -28,6 +28,8 @@ from durak.cards import rank_of, suit_of
 from durak.strategies import (
     SEARCH_INFORMED,
     CHEATER_DOC,
+    ORACLE,
+    ORACLE_UNIFORM,
     SEARCH_UNIFORM,
     AUTO_ATTACK,
     AUTO_DEFEND,
@@ -50,7 +52,7 @@ T = rules.DEFAULT_SETTINGS
 # ONE function, so they are listed separately here only to keep the ids visible; `test_the_two_search_ids_
 # resolve_to_the_same_function` in `tests/test_search.py` pins the sharing.
 IMPLEMENTED = (AUTO_ATTACK, AUTO_DEFEND, RANDOM, GREEDY, CONSERVATIVE, SEARCH_UNIFORM,
-                SEARCH_INFORMED, CHEATER_DOC)
+                SEARCH_INFORMED, CHEATER_DOC, ORACLE, ORACLE_UNIFORM)
 
 #: Ids the plan reserves but the registry deliberately refuses to dispatch. `CONSERVATIVE` sat here until
 #: Task 13 implemented it; the list is kept so a newly added strategy has to be added to `IMPLEMENTED`
@@ -97,6 +99,8 @@ def test_strategy_id_values_are_pinned():
     assert StrategyId.SEARCH_UNIFORM == 5
     assert StrategyId.SEARCH_INFORMED == 6
     assert StrategyId.CHEATER_DOC == 7
+    assert StrategyId.ORACLE == 8
+    assert StrategyId.ORACLE_UNIFORM == 9
 
 
 def test_info_mode_values_are_pinned():

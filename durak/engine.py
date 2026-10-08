@@ -76,6 +76,7 @@ from durak.rules import (
 )
 from durak.strategies.cheater_doc import policy_cheater_doc
 from durak.strategies.conservative import policy_conservative
+from durak.strategies.oracle import policy_oracle, policy_oracle_uniform
 from durak.strategies.policies import (
     policy_auto_attack,
     policy_auto_defend,
@@ -247,6 +248,12 @@ def choose_action(state: GameState, player: int, strategy_id: int, info_mode: in
     # A separate implementation on purpose -- see durak/strategies/cheater_doc.py.
     if strategy_id == 7:
         return policy_cheater_doc(state, player, strategy_id, info_mode, stream)
+    # The ceiling pair: exact opponent hand at depth 4, and its uninformed twin over the uniform
+    # prior. Appended rather than renumbered, so no id already written into a Parquet row moves.
+    if strategy_id == 8:
+        return policy_oracle(state, player, strategy_id, info_mode, stream)
+    if strategy_id == 9:
+        return policy_oracle_uniform(state, player, strategy_id, info_mode, stream)
 
     raise ValueError("strategy id has no policy")
 

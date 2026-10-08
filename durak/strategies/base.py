@@ -53,6 +53,12 @@ class StrategyId(IntEnum):
     #: search. A deliberately *different* code path, kept so the document's specification
     #: can be measured rather than argued about.
     CHEATER_DOC = 7
+    #: The ceiling model: the opponent's real hand, searched deeper than either search arm.
+    #: Appended, never renumbered -- see this module's note on ids.
+    ORACLE = 8
+    #: The uninformed arm of the same deep pair, over the uniform prior. Bounding a *difference*
+    #: needs both of its arms at the depth being bounded.
+    ORACLE_UNIFORM = 9
 
 
 class InfoMode(IntEnum):
