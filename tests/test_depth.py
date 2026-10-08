@@ -88,25 +88,8 @@ def _first_matching(state, player, kinds_wanted):
     return None
 
 
-# --- OPEN GAP, deliberately left as a comment rather than a failing test ---------------------------
-#
-# Two differential tests are NOT written, and a green suite here does NOT mean they pass:
-#
-#   1. the FOUR-ply leaf against `rules.apply_action` applied four times. Nothing has ever exercised a
-#      ply count above three, so the loop's refill and role handling at four plies are untested;
-#   2. `plies_after` at nplies == 3 against `rules.legal_actions`, and above all the `table_size == 0`
-#      branch -- the attacker opening a fresh round after a refill. That branch did not exist in either
-#      written-out enumerator, so a generalisation that omitted it would pass every depth-1 and depth-2
-#      test in the suite and be blind at depth 4.
-#
-# The shape these need is known and was verified by hand on 2026-10-07: deal, pick an attack the opponent
-# CAN beat (picking the attacker's first legal attack does not work -- it is often unbeatable, the reply
-# set is then TAKE alone and the line dies at ply two), then BEAT, then STOP, then any legal move. After
-# the STOP the roles have swapped, the table is empty and the new attacker has exactly one legal action,
-# ATTACK, with both hands refilled to six. Driving 120 deals gave 119 beatable attacks but the fixture
-# builder above still does not reproduce them inside pytest, so the two tests are withheld rather than
-# shipped red.
-#
-# Until they exist, the depth parameter is verified at depths 1 and 2 by the pre-existing exact
-# differential tests (which now execute through `leaf_profile_after_n` and `plies_after`) and at depths 1
-# to 4 for legality and determinism only.
+# The differential tests for a ply count above three -- the four-ply leaf against the engine, and
+# `plies_after` at three plies including the `table_size == 0` branch -- live in
+# `tests/test_depth_plies.py`. They were written after this module and this module's earlier draft of them
+# did not work; keeping them apart means a failure there is unambiguously about the ply-count coverage and
+# not about the legality and determinism checks here.
