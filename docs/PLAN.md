@@ -26,6 +26,28 @@ Verified, with the path that verified it.
 search has *reduced* the measured information effect, +0.080 → +0.018 → −0.053. Whether that
 continues downward or turns around is the central open question of the project.
 
+## 1a. Status, and one hard scheduling constraint
+
+**Done:** the leaf and the ply enumeration are depth-parameterised (`leaf_profile_after_n`,
+`plies_after`); the search is depth-parameterised by an ITERATIVE explicit-stack walk, because a
+recursive `@njit` kills every spawned worker; depths 1-4 are pinned for legality and determinism, and the
+four-ply leaf and the three-ply enumeration are pinned against the engine. The depth-4 test found a real
+bug -- the leaf's loop dropped every ply after a round end, which is invisible at depths 1 to 3.
+
+**Two measurement traps found the hard way, both now in `IMPROVEMENTS.md`:**
+- numba's disk cache does NOT invalidate when a module global changes value, so a depth sweep with a warm
+  cache returns *identical* numbers at every depth -- a flat curve that looks like a finding. `SEARCH_DEPTH`
+  is now read from `DURAK_SEARCH_DEPTH` at import, and the sweep clears `__pycache__` before each depth.
+- the depth-curve harness passed the info modes as a fixed pair to both seat orders, which handed the
+  UNIFORM arm the truth in the mirror game; the two directions cancelled to a flat `+0.0000`. Info modes
+  must follow the ARM, not the seat.
+
+**The constraint.** Every remaining item -- the two unimplemented rules, the `pairing_index` schema fix --
+edits `durak/rules.py`, `durak/leaf.py`, `durak/engine.py` or `durak/telemetry.py`. Those are exactly the
+files the depth-curve run is reading. **They must not be edited while a measurement is in flight**, because
+the run would silently measure a mixture of two code versions and the result would be uninterpretable.
+So the depth curve runs first, and the remaining engine edits are batched behind it rather than interleaved.
+
 ## 2. What remains
 
 Ordered. Items 1–3 are blocking; the rest are not.
