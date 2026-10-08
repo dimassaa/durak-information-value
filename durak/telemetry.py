@@ -116,6 +116,10 @@ def level2_schema() -> pa.Schema:
     """
     return pa.schema([
         pa.field("run_id", pa.int64()), pa.field("game_index", pa.int64()),
+        # Added at schema version 3. `game_index` is cell-local, so without this column no level-2 or
+        # level-3 row can be attributed to a strategy: joining on `(run_id, game_index)` alone fans out
+        # by the number of cells.
+        pa.field("pairing_index", pa.int32()),
         pa.field("round_idx", pa.int32()), pa.field("attacker", pa.int32()),
         pa.field("n_attacks", pa.int32()), pa.field("n_throw_ins", pa.int32()),
         pa.field("n_defenses", pa.int32()), pa.field("defender_took", pa.bool_()),
@@ -135,6 +139,7 @@ def level3_schema() -> pa.Schema:
     """
     return pa.schema([
         pa.field("run_id", pa.int64()), pa.field("game_index", pa.int64()),
+        pa.field("pairing_index", pa.int32()),
         pa.field("round_idx", pa.int32()), pa.field("seq", pa.int32()),
         pa.field("actor", pa.int32()), pa.field("action_type", pa.int32()),
         pa.field("card_id", pa.int32()), pa.field("info_mode", pa.int32()),

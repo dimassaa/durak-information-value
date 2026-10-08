@@ -179,7 +179,12 @@ def _build_game_dtype():
 def _build_round_dtype():
     """Level 2, per round."""
     return np.dtype([
-        ("run_id", "i8"), ("game_index", "i8"), ("round_idx", "i4"),
+        ("run_id", "i8"), ("game_index", "i8"), ("pairing_index", "i4"), ("round_idx", "i4"),
+        # `pairing_index` is what makes a level-2 row joinable to its game. `game_index` is CELL-LOCAL:
+        # in the 57-cell primary run each of the 20,000 indices occurs in all 57 cells, so joining on
+        # `(run_id, game_index)` alone fans out by 57 and every level-2 figure becomes an average over 57
+        # unrelated games. Level 1 already carried the column for exactly this reason; levels 2 and 3 did
+        # not, which is why no round- or move-level quantity could be attributed to a strategy at all.
         ("attacker", "i4"), ("n_attacks", "i4"), ("n_throw_ins", "i4"),
         ("n_defenses", "i4"), ("defender_took", "?"), ("take_voluntary", "?"),
         ("hand_p0", "i4"), ("hand_p1", "i4"), ("deck_remaining", "i4"),
@@ -197,7 +202,8 @@ def _build_move_dtype():
     benchmark instead.
     """
     return np.dtype([
-        ("run_id", "i8"), ("game_index", "i8"), ("round_idx", "i4"), ("seq", "i4"),
+        ("run_id", "i8"), ("game_index", "i8"), ("pairing_index", "i4"), ("round_idx", "i4"),
+        ("seq", "i4"),
         ("actor", "i4"), ("action_type", "i4"), ("card_id", "i4"), ("info_mode", "i4"),
         ("legal_action_count", "i4"), ("chosen_index_in_legal_order", "i4"),
     ])
@@ -587,6 +593,7 @@ def _flush_round(rounds, written, round_start, row, state, round_idx, attacker, 
     rec = rounds[written]
     rec["run_id"] = row["run_id"]
     rec["game_index"] = row["game_index"]
+    rec["pairing_index"] = row["pairing_index"]
     rec["round_idx"] = round_idx
     rec["attacker"] = attacker
     rec["n_attacks"] = n_attacks
@@ -622,6 +629,7 @@ def _record_move(moves, written, move_start, row, state, seq, player, action, of
     rec = moves[written]
     rec["run_id"] = row["run_id"]
     rec["game_index"] = row["game_index"]
+    rec["pairing_index"] = row["pairing_index"]
     rec["round_idx"] = state.round_idx
     rec["seq"] = seq
     rec["actor"] = player
