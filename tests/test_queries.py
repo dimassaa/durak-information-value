@@ -200,7 +200,8 @@ def test_rules_and_dealing_reports_the_first_attacker_split(tmp_path):
     result = rules_and_dealing(root)
     assert result["deck_sizes"] == [36]
     assert result["regimes"] == ["RULE_DERIVED"]
-    assert result["first_attacker_p0_wins"] + result["first_attacker_p1_wins"] == 200
+    assert result["seat0_wins"] + result["seat1_wins"] == 200
+    assert result["first_attacker_wins"] >= 0
 
 
 # --- build_all ------------------------------------------------------------------

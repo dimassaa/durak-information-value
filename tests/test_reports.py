@@ -267,8 +267,8 @@ def _fixture_json(tmp_path) -> Path:
         "opponent_independent_strength.json": {"metric": "opponent_independent_strength",
                                                "opponent": 2, "rows": [], "note": "n/a"},
         "rules_and_dealing.json": {"metric": "rules_and_dealing", "deck_sizes": [36],
-                                    "regimes": ["RULE_DERIVED"], "first_attacker_p0_wins": 20000,
-                                    "first_attacker_p1_wins": 20000, "games": 40000,
+                                    "regimes": ["RULE_DERIVED"], "seat0_wins": 20000,
+                                    "seat1_wins": 20000, "games": 40000,
                                     "both_have_trumps": 39900, "at_least_one_without_trump_rate": 0.0025},
     }
     for name, body in payload.items():
@@ -471,8 +471,8 @@ def _fixture_json_reports_2_3(tmp_path) -> Path:
         },
         "rules_and_dealing.json": {
             "metric": "rules_and_dealing", "deck_sizes": [36],
-            "regimes": ["RULE_DERIVED"], "first_attacker_p0_wins": 20000,
-            "first_attacker_p1_wins": 20000, "games": 40000, "both_have_trumps": 26216,
+            "regimes": ["RULE_DERIVED"], "seat0_wins": 20000,
+            "seat1_wins": 20000, "games": 40000, "both_have_trumps": 26216,
             "at_least_one_without_trump_rate": 0.3446,
         },
     }

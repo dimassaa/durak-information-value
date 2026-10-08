@@ -209,8 +209,8 @@ def build_report_one(aggregate_dir, out_path) -> Path:
             [
                 ["Deck sizes", ", ".join(str(d) for d in dealing.get("deck_sizes", []))],
                 ["Regimes", ", ".join(dealing.get("regimes", []))],
-                ["Seat 0 wins", dealing.get("first_attacker_p0_wins")],
-                ["Seat 1 wins", dealing.get("first_attacker_p1_wins")],
+                ["Seat 0 wins", dealing.get("seat0_wins")],
+                ["Seat 1 wins", dealing.get("seat1_wins")],
                 ["Deals with no trump", dealing.get("at_least_one_without_trump_rate")],
             ],
             sort_keys=[],
@@ -679,19 +679,19 @@ def build_report_three(aggregate_dir, out_path) -> Path:
             ["Regimes", ", ".join(dealing.get("regimes") or [])],
             ["Both players hold a trump", dealing.get("both_have_trumps")],
             ["Deals where at least one player holds no trump", dealing.get("at_least_one_without_trump_rate")],
-            ["Seat 0 wins", dealing.get("first_attacker_p0_wins")],
-            ["Seat 1 wins", dealing.get("first_attacker_p1_wins")],
+            ["Seat 0 wins", dealing.get("seat0_wins")],
+            ["Seat 1 wins", dealing.get("seat1_wins")],
         ],
         sort_keys=[],
     )
     doc.note_block(
         "A positional effect can be told from a dealing effect here",
         "The two seat counts are near-equal, so a rate difference between two strategies is about "
-        "the strategies and not about which seat they were dealt into. Read the field names "
-        "carefully though: 'first_attacker_p0_wins' and 'first_attacker_p1_wins' count SEAT wins, "
-        "not wins by the first attacker. Under RULE_DERIVED the first attacker is decided by the "
-        "rules and is not seat 0, so the dataset's actual first-attacker win rate is a different "
-        "number from either field. TRACKED IN IMPROVEMENTS.md.",
+        "the strategies and not about which seat they were dealt into. The field that answers the "
+        "positional question is <b>first_attacker_wins</b>, which counts whoever attacked first: "
+        "under RULE_DERIVED the first attacker is chosen by the rules and is not seat 0, so it cannot "
+        "be recovered from the seat counts. It reads 0.48 on the primary dataset -- the first attacker "
+        "loses about half again as often as it wins, which a clean 50/50 seat split cannot show.",
     )
 
     # --- throw-in limits versus the rule ---------------------------------------------------

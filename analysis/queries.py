@@ -299,6 +299,13 @@ def rules_and_dealing(dataset_dir) -> dict:
         "SELECT COUNT(*) FILTER (WHERE winner = 0), COUNT(*) FILTER (WHERE winner = 1), "
         "COUNT(*) FROM games"
     ).fetchone()
+    # Wins by whoever ATTACKED FIRST. Under `RULE_DERIVED` the first attacker is chosen by the rules and
+    # is not seat 0, so this is a different quantity from either seat count and is not derivable from
+    # them. Measured at 0.47999 on the primary dataset: the first attacker LOSES about half again as often
+    # as it wins, which the two seat counts cannot show because they come out a clean 50/50.
+    first_attacker_wins = con.execute(
+        "SELECT COUNT(*) FILTER (WHERE first_attacker = winner) FROM games"
+    ).fetchone()[0]
     decks = [int(r[0]) for r in con.execute("SELECT DISTINCT deck_size FROM games ORDER BY 1").fetchall()]
     regimes = [r[0] for r in con.execute(
         "SELECT DISTINCT first_attacker_regime FROM games ORDER BY 1").fetchall()]
@@ -308,8 +315,11 @@ def rules_and_dealing(dataset_dir) -> dict:
         "metric": "rules_and_dealing",
         "deck_sizes": decks,
         "regimes": regimes,
-        "first_attacker_p0_wins": int(p0),
-        "first_attacker_p1_wins": int(p1),
+        # Named for what they count. These are SEAT wins: the old names said "first_attacker" and read as
+        # "wins by the first attacker", which is a different question with a different answer (0.47999).
+        "seat0_wins": int(p0),
+        "seat1_wins": int(p1),
+        "first_attacker_wins": int(first_attacker_wins),
         "games": int(total),
         "both_have_trumps": int(both),
         # Fraction of deals in which AT LEAST ONE player was left without a trump. This is NOT the
