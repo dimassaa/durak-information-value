@@ -31,3 +31,7 @@ data/
 #   IMPROVEMENTS.md           tracked backlog, never ignored
 # Datasets are large and reproducible from a seed, so they are kept locally and never committed.
 datasets/
+
+# Measurement output. Large, regenerable from a seed, and kept out of git -- but NOT in /tmp,
+# which has been wiped twice in one session and took a 1.14M-game dataset with it.
+results/

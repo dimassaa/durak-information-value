@@ -38,6 +38,18 @@ depth 3 -- a three-point curve with usable intervals beats a four-point curve wh
 
 ---
 
+## Where measurement output lives
+
+`results/` inside the repository, gitignored, with subdirectories per family (`results/curves/` for depth
+curves, and later ones for weight sweeps, memory horizons and datasets). **Nothing is written under
+`/tmp`.** It has been wiped twice in one session; the first time it took the 1.14M-game dataset, and the
+second time it took the before/after measurements of the whole depth-2 investigation. Both losses were
+avoidable and both cost hours.
+
+Regenerating a result from a seed is always cheaper than keeping a lost one, which is the argument for
+gitignoring these files rather than committing them. It is **not** an argument for putting them in a
+directory the operating system is allowed to delete.
+
 ## Step 1 — anomaly sweep and backlog closure
 
 Nothing new is measured until the instrument is audited. Six defects were found here before, all by a
