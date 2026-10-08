@@ -129,6 +129,41 @@ looked wrong, and each is now a test.
 
 ---
 
+
+### H7 — the effect is about card flow in general, not about the opponent's hand
+
+**Claim.** Every model currently remembers every card ever played: the particle filter excludes the whole
+discard pile from the opponent's candidate set. That is *perfect memory*, and it makes the information
+question binary — know the hand exactly, or know nothing. Real players remember the last few cards and
+reconstruct the rest. So the measured effect may not be about the opponent at all. It may be about knowing
+which cards are gone, which is a different quantity with a different policy consequence.
+
+**Why this is the sharpest remaining question.** The particle filter does two jobs at once: it estimates the
+opponent's hand, and it uses the discard pile to eliminate candidates. Separating them is the difference
+between "perfect knowledge of the opponent" and "perfect bookkeeping". A bounded-memory arm keeps the first
+and loses the second, so the two decompose.
+
+**The design.** A memory horizon `M`, the number of plies back a model remembers. Cards discarded more
+than `M` plies ago return to the candidate set, and the filter must place them — in the deck or in the
+opponent's hand — which is exactly the uncertainty being modelled. `M = ∞` reproduces today's numbers
+exactly and is the regression guard for the change; `M = 0` remembers nothing about played cards.
+
+**Predictions, and they differ.**
+
+| outcome | reading |
+|---|---|
+| a bounded arm matches the perfect-memory arm | the effect is bookkeeping. The headline is about tracking cards, not about the opponent |
+| the effect decays smoothly with `M` | information about the opponent is worth a few plies of history and no more |
+| a bounded arm BEATS the perfect-memory arm | a sharper prior beats a complete one, and the project's whole framing is wrong |
+
+**The third row is the one worth being ready for.** It is not a fantasy: the search already loses to a
+100-particle prior arm despite the oracle arm holding the exact hand, so in this engine a sharper belief has
+beaten a perfect one before.
+
+**Cost.** One parameter through the filter, plus a test that `M = ∞` reproduces the current numbers exactly.
+That regression test is the whole safety margin — the parameter changes what every belief in the project is,
+and a silent off-by-one would look like a scientific result.
+
 ## 3. Threats to validity, ranked by how much damage they do
 
 | # | threat | damage | status |
