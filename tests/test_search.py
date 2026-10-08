@@ -89,6 +89,21 @@ from durak.engine import choose_action
 from durak.strategies import RANDOM
 from tests.support import Pool, card_at, legal_state, random_position
 
+def _deck_hypo(state, particles):
+    """A deterministic draw-order hypothesis for the tests, derived from the real pile.
+
+    The tests pin the leaf against the engine on the TRUE draw order, so the hypothesis is that order
+    reversed -- the leaf consumes the pile from the end. This is a TEST path: the search builds its own
+    hypotheses through `search_policy._deck_hypotheses`, which shuffles, and that is what makes the deck
+    genuinely unknown to it.
+    """
+    n = int(state.deck_len)
+    order = np.empty(n, dtype=np.int16)
+    for i in range(n):
+        order[i] = state.deck[n - 1 - i]
+    return np.repeat(order[None, :], particles.shape[0], axis=0)
+
+
 WEIGHTS = EVAL_WEIGHTS
 
 #: The table cards every mid-round fixture uses. Fixed ids, reserved before the hands are drawn.
@@ -263,7 +278,7 @@ def test_the_search_returns_a_legal_action():
         player = rules.acting_player(state)
         particles = initial_particles(state, 1 - player, 32, RngStream(5))
 
-        assert int(expectimax(state, player, particles, WEIGHTS)) in {
+        assert int(expectimax(state, player, particles, _deck_hypo(state, particles), WEIGHTS)) in {
             int(a) for a in rules.legal_actions(state, player)
         }
 
@@ -277,7 +292,7 @@ def test_the_search_is_deterministic():
     state = midround([card_at(6, 0), card_at(0, 1)], [card_at(2, 2), card_at(3, 2)])
     particles = initial_particles(state, 1, 64, RngStream(7))
 
-    answers = {int(expectimax(state, 0, particles, WEIGHTS)) for _ in range(8)}
+    answers = {int(expectimax(state, 0, particles, _deck_hypo(state, particles), WEIGHTS)) for _ in range(8)}
 
     assert len(answers) == 1, f"the search gave {len(answers)} different actions for one position"
 
@@ -293,7 +308,7 @@ def test_the_search_does_not_modify_the_state_or_the_particles():
     before = (int(state.round_idx), int(state.attacker), int(state.table_attack_count),
               int(state.hand_sizes[0]), bytes(np.sort(state.hands[0])))
 
-    expectimax(state, 0, particles, WEIGHTS)
+    expectimax(state, 0, particles, _deck_hypo(state, particles), WEIGHTS)
 
     after = (int(state.round_idx), int(state.attacker), int(state.table_attack_count),
              int(state.hand_sizes[0]), bytes(np.sort(state.hands[0])))
@@ -316,7 +331,7 @@ def test_it_throws_a_card_the_opponent_is_certain_it_cannot_beat():
     assert throws, "the fixture offers no throw-ins, so the test would be vacuous"
     assert rules.BEAT not in reply_kinds(state, pack_action(THROW, throws[0]), hand1)
 
-    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
+    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), _deck_hypo(state, certain_particles(state, 1, hand1)), WEIGHTS))
 
     assert action_kind(chosen) == THROW, (
         f"the search stopped while {len(throws)} throw-ins are known to be unbeatable"
@@ -342,10 +357,10 @@ def test_it_never_spends_a_trump_when_holding_it_is_better():
     assert not rules.beats(hand1[0], hand0[0], state.trump), "and must not be able to beat the trump"
 
     particles = certain_particles(state, 1, hand1)
-    scores = {int(a): action_value(state, int(a), 0, particles, WEIGHTS, DEFAULT_DEPTH)
+    scores = {int(a): action_value(state, int(a), 0, particles, _deck_hypo(state, particles), WEIGHTS, DEFAULT_DEPTH)
               for a in rules.legal_actions(state, 0)}
 
-    chosen = int(expectimax(state, 0, particles, WEIGHTS))
+    chosen = int(expectimax(state, 0, particles, _deck_hypo(state, particles), WEIGHTS))
 
     assert scores[pack_action(THROW, hand0[0])] < min(
         v for a, v in scores.items() if a != pack_action(THROW, hand0[0])
@@ -378,7 +393,7 @@ def test_throwing_beats_stopping_when_every_throw_in_is_beaten():
             "this fixture is supposed to beat every throw-in"
         )
 
-    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
+    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), _deck_hypo(state, certain_particles(state, 1, hand1)), WEIGHTS))
 
     assert action_kind(chosen) == THROW, (
         f"the search stopped; the depth-1 property this test pins no longer holds and the recorded "
@@ -422,7 +437,7 @@ def test_a_throw_in_that_is_beaten_is_followed_by_a_stop_and_not_penalised():
     )
 
     particles = certain_particles(state, 1, hand1)
-    chosen = int(expectimax(state, 0, particles, WEIGHTS))
+    chosen = int(expectimax(state, 0, particles, _deck_hypo(state, particles), WEIGHTS))
 
     assert action_kind(chosen) == THROW, (
         f"the search chose kind {action_kind(chosen)}; the beaten branch now costs nothing, so the "
@@ -459,13 +474,13 @@ def test_stopping_still_wins_when_the_throw_in_costs_a_card_the_attacker_wants_t
     hand1 = [int(state.hands[1, i]) for i in range(int(state.hand_sizes[1]))]
     stop_now = leaf_profile_after(state, 0, STOP, 0, STOP, 0, state.hands[0],
                                   np.asarray(sorted(hand1), dtype=np.int16), WEIGHTS)
-    throw_value = action_value(state, throws[0], 0, certain_particles(state, 1, hand1), WEIGHTS, DEFAULT_DEPTH)
+    throw_value = action_value(state, throws[0], 0, certain_particles(state, 1, hand1), _deck_hypo(state, certain_particles(state, 1, hand1)), WEIGHTS, DEFAULT_DEPTH)
 
     assert throw_value < stop_now, (
         f"the throw scores {throw_value:+.4f} against stopping's {stop_now:+.4f}"
     )
 
-    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), WEIGHTS))
+    chosen = int(expectimax(state, 0, certain_particles(state, 1, hand1), _deck_hypo(state, certain_particles(state, 1, hand1)), WEIGHTS))
 
     assert action_kind(chosen) == STOP, (
         f"the search chose kind {action_kind(chosen)}; stopping scores {stop_now:+.4f} and the only "
@@ -499,13 +514,13 @@ def test_the_particle_set_changes_what_the_search_values():
     assert rules.BEAT not in reply_kinds(state, throw, filler + [card_at(4, 2), card_at(8, 1)])
 
     def score(particles):
-        return action_value(state, throw, 0, particles, WEIGHTS, DEFAULT_DEPTH)
+        return action_value(state, throw, 0, particles, _deck_hypo(state, particles), WEIGHTS, DEFAULT_DEPTH)
 
     assert score(blocking) != pytest.approx(score(harmless)), (
         "two opposite beliefs about the defender's hand produced the identical score, so the search is "
         "not using the particle set at all"
     )
-    assert int(expectimax(state, 0, blocking, WEIGHTS)) in {
+    assert int(expectimax(state, 0, blocking, _deck_hypo(state, blocking), WEIGHTS)) in {
         int(a) for a in rules.legal_actions(state, 0)
     }
 
@@ -553,11 +568,11 @@ def test_the_search_returns_the_argmax_of_its_own_value_function():
         checked += 1
 
         particles = certain_particles(state, 1, hand1, k=8)
-        chosen = int(expectimax(state, 0, particles, WEIGHTS))
-        scores = [action_value(state, int(a), 0, particles, WEIGHTS, DEFAULT_DEPTH) for a in options]
+        chosen = int(expectimax(state, 0, particles, _deck_hypo(state, particles), WEIGHTS))
+        scores = [action_value(state, int(a), 0, particles, _deck_hypo(state, particles), WEIGHTS, DEFAULT_DEPTH) for a in options]
         best = float(np.max(scores))
 
-        assert action_value(state, chosen, 0, particles, WEIGHTS, DEFAULT_DEPTH) == pytest.approx(best, abs=1e-9), (
+        assert action_value(state, chosen, 0, particles, _deck_hypo(state, particles), WEIGHTS, DEFAULT_DEPTH) == pytest.approx(best, abs=1e-9), (
             f"the search chose a candidate worth {scores[0]:.4f} when {best:.4f} was available"
         )
         disagreed_with_random += chosen != int(choose_action(state, 0, RANDOM, 0))
@@ -580,6 +595,7 @@ def test_the_search_works_from_a_real_mid_game_position():
     player = rules.acting_player(state)
 
     assert int(expectimax(state, player, initial_particles(state, 1 - player, 24, RngStream(21)),
+                       _deck_hypo(state, initial_particles(state, 1 - player, 24, RngStream(21))),
                           WEIGHTS)) in {int(a) for a in rules.legal_actions(state, player)}
 
 
@@ -621,8 +637,8 @@ def test_the_only_difference_between_the_arms_is_the_hand_source():
     assert informed.shape[0] == 1, "the informed arm is one hypothesis: the real hand"
     assert uninformed.shape[0] == PARTICLE_COUNT
 
-    informed_choice = int(expectimax(state, 0, informed, WEIGHTS))
-    uninformed_choice = int(expectimax(state, 0, uninformed, WEIGHTS))
+    informed_choice = int(expectimax(state, 0, informed, _deck_hypo(state, informed), WEIGHTS))
+    uninformed_choice = int(expectimax(state, 0, uninformed, _deck_hypo(state, uninformed), WEIGHTS))
 
     for choice in (informed_choice, uninformed_choice):
         assert choice in {int(a) for a in rules.legal_actions(state, 0)}, (

@@ -94,7 +94,8 @@ from numba import njit
 from durak.evaluation import EVAL_WEIGHTS
 from durak.rules import GameState
 from durak.search import _expectimax
-from durak.strategies.search_policy import PARTICLE_COUNT, _prior_particles, _truth_particles
+from durak.strategies.search_policy import (PARTICLE_COUNT, _deck_hypotheses, _prior_particles,
+                                         _truth_particles)
 
 #: Ply depth the oracle searches to. Read from the environment rather than assigned literally,
 #: because `@njit` freezes module globals at compile time: a process that compiled at depth 2 keeps
@@ -120,8 +121,9 @@ def policy_oracle(state: GameState, player: int, strategy_id: int, info_mode: in
     the hand is read from the state because that is what the arm is, and the search draws no
     randomness. The signature matches the registry's so the engine can dispatch it unchanged.
     """
-    return _expectimax(state, player, _truth_particles(state, 1 - player), EVAL_WEIGHTS,
-                       ORACLE_DEPTH)
+    hand = _truth_particles(state, 1 - player)
+    return _expectimax(state, player, hand, _deck_hypotheses(state, hand, player, np.uint64(1)),
+                       EVAL_WEIGHTS, ORACLE_DEPTH)
 
 
 @njit(cache=True)
@@ -141,6 +143,6 @@ def policy_oracle_uniform(state: GameState, player: int, strategy_id: int, info_
     "does perfect knowledge pay" with "does depth pay", and in this engine those two point in
     opposite directions.
     """
-    return _expectimax(state, player,
-                       _prior_particles(state, 1 - player, PARTICLE_COUNT, np.uint64(rng_state)),
+    hand = _prior_particles(state, 1 - player, PARTICLE_COUNT, np.uint64(rng_state))
+    return _expectimax(state, player, hand, _deck_hypotheses(state, hand, player, np.uint64(rng_state)),
                        EVAL_WEIGHTS, ORACLE_DEPTH)

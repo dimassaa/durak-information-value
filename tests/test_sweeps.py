@@ -20,6 +20,20 @@ from durak.evaluation import EVAL_SWEEP_GRID
 from durak.strategies.search_policy import PARTICLE_COUNT
 from durak.opponent import initial_particles
 from durak.rng import RngStream
+def _deck_hypo(state, particles):
+    """The TRUE draw order reversed: the leaf consumes the pile from the end with a cursor.
+
+    A TEST path. Production builds SHUFFLED hypotheses through `search_policy._deck_hypotheses`, which is
+    what makes the pile unknown to the search; a test comparing two arms needs both to see the same pile.
+    """
+    n = int(state.deck_len)
+    order = np.empty(n, dtype=np.int16)
+    for i in range(n):
+        order[i] = state.deck[n - 1 - i]
+    return np.repeat(order[None, :], particles.shape[0], axis=0)
+
+
+
 from durak.search import expectimax
 from durak.strategies import (
     CHEATER_DOC,
@@ -76,7 +90,7 @@ def test_the_cheater_agrees_with_a_one_hypothesis_search_where_there_is_no_sampl
                                 dtype=np.int16), (1, 1))
 
     cheater = int(policy_cheater_doc(state, 0, CHEATER_DOC, INFO_TRUTH, np.uint64(7)))
-    searched = int(expectimax(state, 0, truth, W))
+    searched = int(expectimax(state, 0, truth, _deck_hypo(state, truth), W))
 
     assert cheater == searched, (
         f"the Cheater chose kind {action_kind(cheater)} and the one-hypothesis search chose "
@@ -266,8 +280,8 @@ def test_the_two_arms_score_differently_on_some_position():
         truth = np.asarray([sorted(hand1)], dtype=np.int16)
         belief = np.asarray([sorted([replacement] + hand1[1:])], dtype=np.int16)
 
-        different += int(expectimax(state, player, truth, W)) != \
-            int(expectimax(state, player, belief, W))
+        different += int(expectimax(state, player, truth, _deck_hypo(state, truth), W)) != \
+            int(expectimax(state, player, belief, _deck_hypo(state, belief), W))
 
     assert total > 25, f"only {total} positions were usable"
     # The measured rate is about 10%. It is low by construction, not by defect: swapping one card changes

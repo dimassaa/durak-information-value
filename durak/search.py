@@ -86,7 +86,7 @@ DEFAULT_DEPTH = 2
 
 @njit(cache=True)
 def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: int,
-                hand_p, hand_o, weights, opt_kinds, opt_cards) -> float:
+                hand_p, hand_o, hypo_deck, weights, opt_kinds, opt_cards) -> float:
     """The value of the line `nplies` plies in, choosing `depth` further plies.
 
     `depth` counts the plies still to be CHOSEN, so the leaf scores `nplies + depth` plies in total: the
@@ -103,7 +103,8 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
       `count[level]`  how many options that level had.
     """
     if depth <= 0:
-        return leaf_profile_after_n(state, player, nplies, ply_kinds, ply_cards, hand_p, hand_o, weights)
+        return leaf_profile_after_n(state, player, nplies, ply_kinds, ply_cards, hand_p, hand_o,
+                             hypo_deck, weights)
 
     top = nplies + depth - 1
     cursor = np.zeros(top + 1, dtype=np.int64)
@@ -112,7 +113,7 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
 
     level = nplies
     is_max = (level % 2) == 0
-    first = plies_after(state, player, nplies, ply_kinds, ply_cards, hand_p, hand_o,
+    first = plies_after(state, player, nplies, ply_kinds, ply_cards, hand_p, hand_o, hypo_deck,
                         opt_kinds[level], opt_cards[level])
     if first > RESPONSE_CAP:
         raise ValueError(
@@ -120,7 +121,8 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
             f"Truncating would make that player look weaker than the rules allow."
         )
     if first == 0:
-        return leaf_profile_after_n(state, player, nplies, ply_kinds, ply_cards, hand_p, hand_o, weights)
+        return leaf_profile_after_n(state, player, nplies, ply_kinds, ply_cards, hand_p, hand_o,
+                             hypo_deck, weights)
     count[level] = first
     acc[level] = -1e308 if is_max else 0.0
 
@@ -146,7 +148,7 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
 
         if level == top:
             value = leaf_profile_after_n(state, player, level + 1, ply_kinds, ply_cards,
-                                         hand_p, hand_o, weights)
+                                         hand_p, hand_o, hypo_deck, weights)
             if is_max:
                 if value > acc[level]:
                     acc[level] = value
@@ -155,7 +157,7 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
             cursor[level] += 1
             continue
 
-        below = plies_after(state, player, level + 1, ply_kinds, ply_cards, hand_p, hand_o,
+        below = plies_after(state, player, level + 1, ply_kinds, ply_cards, hand_p, hand_o, hypo_deck,
                             opt_kinds[level + 1], opt_cards[level + 1])
         if below > RESPONSE_CAP:
             raise ValueError(
@@ -164,7 +166,7 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
         if below == 0:
             # The rules ended the line here. Score what happened; do not pad to `depth`.
             value = leaf_profile_after_n(state, player, level + 1, ply_kinds, ply_cards,
-                                         hand_p, hand_o, weights)
+                                         hand_p, hand_o, hypo_deck, weights)
             if is_max:
                 if value > acc[level]:
                     acc[level] = value
@@ -183,8 +185,8 @@ def _line_value(state, player: int, nplies: int, ply_kinds, ply_cards, depth: in
 
 
 @njit(cache=True)
-def action_value(state, action: int, player: int, particles: np.ndarray, weights,
-                 depth: int) -> float:
+def action_value(state, action: int, player: int, particles: np.ndarray, hypo_decks: np.ndarray,
+                 weights, depth: int) -> float:
     """The expected leaf score of playing `action`, averaged over replies and particles.
 
     The reply list is recomputed inside each particle's hypothesis rather than once against the real hand.
@@ -209,8 +211,8 @@ def action_value(state, action: int, player: int, particles: np.ndarray, weights
     for i in range(k):
         ply_kinds[0] = kind
         ply_cards[0] = card
-        total += _line_value(state, player, 1, ply_kinds, ply_cards, depth,
-                             state.hands[player], particles[i], weights, rows_kinds, rows_cards)
+        total += _line_value(state, player, 1, ply_kinds, ply_cards, depth, state.hands[player],
+                             particles[i], hypo_decks[i], weights, rows_kinds, rows_cards)
         counted += 1
 
     if counted == 0:
@@ -219,7 +221,8 @@ def action_value(state, action: int, player: int, particles: np.ndarray, weights
 
 
 @njit(cache=True)
-def _expectimax(state, player: int, particles: np.ndarray, weights, depth: int) -> np.int32:
+def _expectimax(state, player: int, particles: np.ndarray, hypo_decks: np.ndarray, weights,
+                  depth: int) -> np.int32:
     """The action `player` should take as a packed int32, or ``-1`` if none is legal.
 
     Every legal action is played, the opponent's every legal reply is enumerated under every particle
@@ -242,7 +245,7 @@ def _expectimax(state, player: int, particles: np.ndarray, weights, depth: int) 
 
     for i in range(options.shape[0]):
         action = int(options[i])
-        score = action_value(state, action, player, particles, weights, depth)
+        score = action_value(state, action, player, particles, hypo_decks, weights, depth)
         # Strict `>`, so the first candidate reaching the maximum wins: a documented tie-break, not an
         # accident of iteration order.
         if score > best_score:
@@ -252,7 +255,8 @@ def _expectimax(state, player: int, particles: np.ndarray, weights, depth: int) 
     return np.int32(best_action)
 
 
-def expectimax(state, player: int, particles: np.ndarray, weights, depth: int = DEFAULT_DEPTH) -> np.int32:
+def expectimax(state, player: int, particles: np.ndarray, hypo_decks: np.ndarray,
+               weights, depth: int = DEFAULT_DEPTH) -> np.int32:
     """The depth-parameterised entry point. A thin Python wrapper, deliberately.
 
     `@njit` **silently ignores Python-level default arguments**, so a default declared on the compiled
@@ -260,4 +264,4 @@ def expectimax(state, player: int, particles: np.ndarray, weights, depth: int = 
     IMPROVEMENTS.md; the wrapper is where the default lives, and the compiled implementation takes the depth
     explicitly with no default to ignore.
     """
-    return _expectimax(state, player, particles, weights, depth)
+    return _expectimax(state, player, particles, hypo_decks, weights, depth)

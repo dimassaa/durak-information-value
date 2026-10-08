@@ -33,6 +33,21 @@ from durak.actions import ATTACK, TAKE, action_card, action_kind, pack_action
 from durak.evaluation import EVAL_WEIGHTS
 from durak.leaf import leaf_profile_after
 from durak.opponent import _unseen_into
+def _deck_hypo(state, particles):
+    """The TRUE draw order reversed: the leaf consumes the pile from the end with a cursor.
+
+    A TEST path, not the production one. The oracle and both search arms build SHUFFLED draw-order
+    hypotheses through `search_policy._deck_hypotheses`, which is what makes the pile genuinely unknown
+    to them. These tests instead pin the oracle against the shared search, so they need the pile it
+    actually sees.
+    """
+    n = int(state.deck_len)
+    order = np.empty(n, dtype=np.int16)
+    for i in range(n):
+        order[i] = state.deck[n - 1 - i]
+    return np.repeat(order[None, :], particles.shape[0], axis=0)
+
+
 from durak.search import expectimax
 from durak.strategies import (
     ORACLE,
@@ -44,7 +59,7 @@ from durak.strategies import (
     registered_ids,
 )
 from durak.strategies.oracle import ORACLE_DEPTH
-from durak.strategies.search_policy import SEARCH_DEPTH, _truth_particles
+from durak.strategies.search_policy import SEARCH_DEPTH, _deck_hypotheses, _truth_particles
 from tests.support import Pool, legal_state, random_position
 
 #: Real mid-game positions, reached by random play from a real deal. Constructed fixtures exercise one
@@ -103,7 +118,9 @@ def test_the_deep_pair_is_registered_and_is_one_class():
         player = _acting(state)
         stream = np.uint64(index)
         particles = _prior_particles(state, 1 - player, PARTICLE_COUNT, stream)
-        expected = int(expectimax(state, player, particles, EVAL_WEIGHTS, ORACLE_DEPTH))
+        expected = int(expectimax(state, player, particles,
+                   _deck_hypotheses(state, particles, player, np.uint64(index)),
+                   EVAL_WEIGHTS, ORACLE_DEPTH))
 
         chosen = int(uniform(state, player, ORACLE_UNIFORM, int(InfoMode.NONE), stream))
         informed = int(oracle(state, player, ORACLE, int(InfoMode.TRUTH), stream))
@@ -198,7 +215,9 @@ def test_the_oracle_is_the_shared_search_at_the_configured_depth():
             continue
         player = _acting(state)
         particles = _truth_particles(state, 1 - player)
-        expected = int(expectimax(state, player, particles, EVAL_WEIGHTS, ORACLE_DEPTH))
+        expected = int(expectimax(state, player, particles,
+                   _deck_hypotheses(state, particles, player, np.uint64(index)),
+                   EVAL_WEIGHTS, ORACLE_DEPTH))
 
         chosen = int(oracle(state, player, ORACLE, int(InfoMode.TRUTH), np.uint64(index)))
 

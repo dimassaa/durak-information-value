@@ -138,11 +138,17 @@ def _refill_one(hand, size: int, deck, deck_len: int):
 
     Returns the new size and the new pile length.
     """
+    # A read cursor rather than a shift. The old body did `deck[i] = deck[i + 1]` for every remaining card
+    # after each draw, so filling a hand cost O(pile) per card and a round cost O(pile^2) -- pure memmove of
+    # an array only ever read from the front. Nothing indexes the pile by an absolute position, so a cursor
+    # is equivalent and O(1) per card.
+    #
+    # CONSEQUENCE, and it is a convention callers must respect: the pile is consumed from the END, so the
+    # hypothesis array is built with the NEXT card LAST. The real draw pile is consumed from the front, so
+    # a caller holding the true order must reverse it.
     while size < HAND_TARGET and deck_len > 0 and size < hand.shape[0]:
-        hand[size] = deck[0]
+        hand[size] = deck[deck_len - 1]
         size += 1
-        for i in range(deck_len - 1):
-            deck[i] = deck[i + 1]
         deck_len -= 1
     return size, deck_len
 
@@ -190,7 +196,7 @@ def _hand_size(hand, capacity: int) -> int:
 
 
 @njit(cache=True)
-def _prepare(state, player: int, hand_p, hand_o):
+def _prepare(state, player: int, hand_p, hand_o, hypo_deck):
     """The local working copy of a position, as plain arrays. The stand-in for a second `GameState`.
 
     Returns `(mine, size_p, theirs, size_o, table, table_size, defenses, defense_count, deck, deck_len,
@@ -217,10 +223,15 @@ def _prepare(state, player: int, hand_p, hand_o):
     for i in range(size_o):
         theirs[i] = hand_o[i]
 
-    deck = np.empty(state.deck.shape[0] + 2 * HAND_TARGET + 8, dtype=np.int16)
-    deck_len = int(state.deck_len)
+    # The draw pile is a HYPOTHESIS, not the real one. Reading `state.deck` here gave the leaf the exact
+    # future draw order, which no real observer has: they know the pile's SIZE and nothing else. The
+    # consequence of the old version was larger than a modelling nicety -- with the pile public, the
+    # complement of the visible cards is exactly the opponent's hand, so "perfect knowledge of the hand"
+    # became derivable rather than learned and the research question had no hidden information in it.
+    deck = np.empty(hypo_deck.shape[0] + 2 * HAND_TARGET + 8, dtype=np.int16)
+    deck_len = hypo_deck.shape[0]
     for i in range(deck_len):
-        deck[i] = state.deck[i]
+        deck[i] = hypo_deck[i]
 
     # The table, mutable: cards leave it for a hand or for the discard, and new attacks land on it.
     table = np.empty(TABLE_CAPACITY, dtype=np.int16)
@@ -347,7 +358,9 @@ def leaf_profile_after(state, player: int, kind_a: int, card_a: int, kind_b: int
     cards[0] = card_a
     kinds[1] = kind_b
     cards[1] = card_b
-    return leaf_profile_after_n(state, player, 2, kinds, cards, hand_p, hand_o, weights)
+    # REFERENCE path: the real pile, reversed, because the leaf consumes from the end. The search does NOT
+    # come through here -- it passes a hypothesised order to `leaf_profile_after_n` directly.
+    return leaf_profile_after_n(state, player, 2, kinds, cards, hand_p, hand_o, state.deck[::-1], weights)
 
 
 @njit(cache=True)
@@ -360,7 +373,7 @@ def leaf_profile_after_ply3(state, player: int, kind_a: int, card_a: int, kind_b
     kinds[0], cards[0] = kind_a, card_a
     kinds[1], cards[1] = kind_b, card_b
     kinds[2], cards[2] = kind_c, card_c
-    return leaf_profile_after_n(state, player, 3, kinds, cards, hand_p, hand_o, weights)
+    return leaf_profile_after_n(state, player, 3, kinds, cards, hand_p, hand_o, state.deck[::-1], weights)
 
 
 # --- depth as a parameter ------------------------------------------------------------------------
@@ -376,7 +389,7 @@ def leaf_profile_after_ply3(state, player: int, kind_a: int, card_a: int, kind_b
 
 @njit(cache=True)
 def leaf_profile_after_n(state, player: int, nplies: int, kinds: np.ndarray, cards: np.ndarray,
-                         hand_p, hand_o, weights) -> float:
+                         hand_p, hand_o, hypo_deck, weights) -> float:
     """`evaluate`'s value after `nplies` plies: `player`, the opponent, `player`, and so on.
 
     The semantics are those of the written-out bodies, and each was carried over rather than reinvented:
@@ -395,7 +408,7 @@ def leaf_profile_after_n(state, player: int, nplies: int, kinds: np.ndarray, car
 
     trump = state.trump
     mine, size_p, theirs, size_o, table, table_size, defenses, defense_count, deck, deck_len, \
-        player_attacks = _prepare(state, player, hand_p, hand_o)
+        player_attacks = _prepare(state, player, hand_p, hand_o, hypo_deck)
 
     moved_p = np.zeros(3, dtype=np.int64)
     moved_o = np.zeros(3, dtype=np.int64)
@@ -553,7 +566,7 @@ def reply_cards_in(hand, size: int, trump: int, target: int) -> np.ndarray:
 
 @njit(cache=True)
 def plies_after(state, player: int, nplies: int, in_kinds: np.ndarray, in_cards: np.ndarray,
-                hand_p, hand_o, out_kinds, out_cards) -> int:
+                hand_p, hand_o, hypo_deck, out_kinds, out_cards) -> int:
     """The legal moves of whoever is to move after `nplies` plies. Returns how many.
 
     One function rather than a `second_plies` and a `third_plies`, because they differ only in how many
@@ -568,7 +581,7 @@ def plies_after(state, player: int, nplies: int, in_kinds: np.ndarray, in_cards:
     trump = int(state.trump)
     defense_ranks = bool(state.throwin_defense_ranks)
     mine, size_p, theirs, size_o, table, table_size, defenses, defense_count, deck, deck_len, \
-        player_attacks = _prepare(state, player, hand_p, hand_o)
+        player_attacks = _prepare(state, player, hand_p, hand_o, hypo_deck)
 
     moved_p = np.zeros(3, dtype=np.int64)
     moved_o = np.zeros(3, dtype=np.int64)
@@ -632,7 +645,8 @@ def second_plies(state, player: int, kind_a: int, card_a: int, hand_p, hand_o, o
     cards = np.empty(2, dtype=np.int16)
     kinds[0] = kind_a
     cards[0] = card_a
-    return plies_after(state, player, 1, kinds, cards, hand_p, hand_o, out_kinds, out_cards)
+    return plies_after(state, player, 1, kinds, cards, hand_p, hand_o, state.deck[::-1],
+                       out_kinds, out_cards)
 
 
 @njit(cache=True)
@@ -643,4 +657,5 @@ def third_plies(state, player: int, kind_a: int, card_a: int, kind_b: int, kind_
     cards = np.empty(4, dtype=np.int16)
     kinds[0], cards[0] = kind_a, card_a
     kinds[1], cards[1] = kind_b, kind_b_card
-    return plies_after(state, player, 2, kinds, cards, hand_p, hand_o, out_kinds, out_cards)
+    return plies_after(state, player, 2, kinds, cards, hand_p, hand_o, state.deck[::-1],
+                       out_kinds, out_cards)

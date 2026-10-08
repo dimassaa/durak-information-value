@@ -34,6 +34,8 @@ depth 2 does not make throwing universal.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 from numba import njit
 
@@ -48,6 +50,7 @@ from durak.actions import (
 )
 from durak.evaluation import EVAL_WEIGHTS
 from durak.opponent import _draw_particles, _unseen_into
+from durak.rng import next_below
 from durak.strategies.base import InfoMode
 from durak.rules import GameState
 from durak.search import _expectimax
@@ -61,13 +64,70 @@ PARTICLE_COUNT = 100
 #: harness the information effect was +0.0176 at depth 1 and -0.0527 at depth 2, so the value changes the
 #: answer. Whichever depth is used must be recorded in the run manifest and printed next to every published
 #: number, because depth 4 against depth 1 compares two different policies.
-SEARCH_DEPTH = 2
+# Read from the environment rather than assigned literally, because `@njit` FREEZES module globals at
+# compile time: a process that compiled at depth 2 keeps depth 2 whatever the variable is reassigned to
+# afterwards. Every depth therefore needs its own process, which is also the honest way to measure one --
+# the alternative silently runs every depth at the first one compiled.
+SEARCH_DEPTH = int(os.environ.get("DURAK_SEARCH_DEPTH", "2"))
 
 #: Pinned spellings of the two information modes, so callers need not import the enum to say which arm
 #: they mean. Named here rather than at the call site because "the arm with the real hand" is the single
 #: most consequential constant in the project and it should appear in exactly one place.
 INFO_TRUTH = int(InfoMode.TRUTH)
 INFO_PARTICLES = int(InfoMode.PARTICLES)
+
+
+@njit(cache=True)
+def _deck_hypotheses(state, particles: np.ndarray, observer: int, rng_state: np.uint64) -> np.ndarray:
+    """One draw-order hypothesis per particle, derived from a SHARED random order.
+
+    The draw pile is hidden from a real observer: they know how many cards are left and nothing else. The
+    old leaf read `state.deck` verbatim, so the search simulated the exact future draws. That was not a
+    modelling nicety -- with the pile public, the complement of the visible cards is exactly the opponent's
+    hand, so "perfect knowledge of the hand" became derivable and the research question had no hidden
+    information in it at all.
+
+    A particle is therefore a JOINT hypothesis: its own cards are the opponent's hand, and the rest of the
+    unseen cards in a random order are the draw pile. One permutation of the unseen set is drawn per
+    decision and each particle keeps the cards its hand does not claim, in that shared relative order.
+
+    Shared rather than independent, and deliberately: the two arms must differ in the HAND and in nothing
+    else. Drawing an independent pile order per particle, or per arm, would fold a second difference into
+    the comparison and the delta would no longer measure knowledge of the hand.
+
+    Stored with the NEXT card LAST, because `leaf._refill_one` consumes the pile from the end with a
+    cursor. See that function for why the cursor replaced the shift.
+    """
+    k = particles.shape[0]
+    width = particles.shape[1]
+    unseen = np.empty(state.initial_deck, dtype=np.int16)
+    n_unseen = _unseen_into(state, observer, unseen)
+
+    order = np.empty(n_unseen, dtype=np.int16)
+    for i in range(n_unseen):
+        order[i] = unseen[i]
+    # Fisher-Yates on the shared order. One shuffle per decision rather than per particle, which is the
+    # difference between one O(n) pass and k of them on the hot path.
+    for i in range(n_unseen - 1, 0, -1):
+        pick, rng_state = next_below(rng_state, i + 1)
+        tmp = order[i]
+        order[i] = order[pick]
+        order[pick] = tmp
+
+    out = np.zeros((k, n_unseen), dtype=np.int16)
+    for i in range(k):
+        written = 0
+        for j in range(n_unseen):
+            card = int(order[j])
+            in_hand = False
+            for h in range(width):
+                if int(particles[i, h]) == card:
+                    in_hand = True
+                    break
+            if not in_hand:
+                out[i, written] = card
+                written += 1
+    return out
 
 
 @njit(cache=True)
@@ -125,7 +185,8 @@ def policy_search(state: GameState, player: int, strategy_id: int, info_mode: in
         particles = _truth_particles(state, opponent)
     else:
         particles = _prior_particles(state, opponent, PARTICLE_COUNT, np.uint64(rng_state))
+    hypo_decks = _deck_hypotheses(state, particles, player, np.uint64(rng_state))
     # -----------------------------------------------------------------------------
 
     # One search, one set of parameters, both arms.
-    return _expectimax(state, player, particles, EVAL_WEIGHTS, SEARCH_DEPTH)
+    return _expectimax(state, player, particles, hypo_decks, EVAL_WEIGHTS, SEARCH_DEPTH)

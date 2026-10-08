@@ -153,7 +153,7 @@ def test_the_four_ply_leaf_matches_the_engine():
         hand_o = leaf_state.hands[1 - player].copy()
         got = leaf_profile_after_n(leaf_state, player, 4,
                                    np.array(kinds, dtype=np.int64),
-                                   np.array(cards, dtype=np.int16), hand_p, hand_o, W)
+                                   np.array(cards, dtype=np.int16), hand_p, hand_o, leaf_state.deck[::-1], W)
         want = _engine_value(engine, player)
         assert got == pytest.approx(want, abs=1e-9), (
             f"seed={seed} kinds={kinds}: leaf {got} vs engine {want}"
@@ -196,7 +196,7 @@ def test_the_three_ply_enumeration_equals_the_rules():
         out_k = np.zeros(CAP, dtype=np.int64)
         out_c = np.zeros(CAP, dtype=np.int16)
         n = plies_after(first, player, 3, np.array(kinds, dtype=np.int64),
-                        np.array(cards, dtype=np.int16), hand_p, hand_o, out_k, out_c)
+                        np.array(cards, dtype=np.int16), hand_p, hand_o, first.deck[::-1], out_k, out_c)
         legal = _legals(engine, player)
         assert n == len(legal), (
             f"seed={seed}: enumerator found {n}, the rules allow {len(legal)}"
