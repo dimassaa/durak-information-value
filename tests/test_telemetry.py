@@ -90,7 +90,8 @@ def spec_level2():
     """Spec 6.2's level-2 fields."""
     return [
         ("run_id", pa.int64()), ("game_index", pa.int64()), ("round_idx", pa.int32()),
-        ("attacker", pa.int32()), ("n_attacks", pa.int32()), ("n_throw_ins", pa.int32()),
+        ("attacker", pa.int32()), ("n_attack_openings", pa.int32()),
+         ("n_throw_ins", pa.int32()),
         ("n_defenses", pa.int32()), ("defender_took", pa.bool_()),
         ("take_voluntary", pa.bool_()),
         ("hand_p0", pa.int32()), ("hand_p1", pa.int32()), ("deck_remaining", pa.int32()),

@@ -149,6 +149,21 @@ def build_report_one(aggregate_dir, out_path) -> Path:
         ("Head-to-head games", (delta.get("discordant_b") or 0) + (delta.get("discordant_c") or 0)),
     ])
 
+    # The single most important thing this page can say, and it goes ABOVE the charts rather than in a
+    # footnote. The delta is not a property of information: it is a measurement at one depth, one weight
+    # vector, one rule reading and one deal distribution, and this project's own depth curve moves it by
+    # more than its own interval width. A reader shown "+0.08" with a tight interval and no provenance
+    # will read it as "information is worth eight points", which is the claim the project withdrew.
+    doc.note_block(
+        "This number is a measurement, not a property of information",
+        "It is the delta at one search depth, one evaluation-weight vector, one reading of the throw-in "
+        "rule, and one distribution of dealt trumps. The project's own depth curve moves it by more than "
+        "the width of this interval, and the throw-in rule reading alone moves the win rate by 7.9 points. "
+        "Treat it as one cell of a range. An earlier headline of +0.0799 was withdrawn: it was measured on "
+        "a dataset that predates both the leaf fix and the deck-hiding change, and it did not reproduce "
+        "with the code that replaced it.",
+    )
+
     doc.table(
         ["Arm", "Wins", "Trials", "Win rate", "Wilson 95%"],
         [

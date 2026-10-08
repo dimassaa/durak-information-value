@@ -448,3 +448,33 @@ def informativeness(particles: np.ndarray, unseen: np.ndarray, deck_size: int = 
     """
     _, entropy = marginals_and_entropy(particles, np.asarray(unseen, dtype=np.int16), deck_size)
     return entropy
+
+
+@njit(cache=True)
+def distinct_hypotheses(particles: np.ndarray) -> int:
+    """How many DIFFERENT hypotheses the particle set actually contains.
+
+    Particle depletion is the reason a posterior spread is not a standard error. A filter that keeps
+    only the hypotheses consistent with what has been seen collapses over time -- every surviving
+    hypothesis can converge to one hand, and then averaging over "100 particles" is averaging over one
+    belief with a hundred copies. Quoted uncertainty built on the spread alone is uncalibrated in exactly
+    the direction that matters, because the search becomes confident while it is not.
+
+    This is the count that makes the spread interpretable, and it is the missing companion to every
+    interval in the project's reports. Rows arrive sorted (see `_draw_particles`), so duplicates are
+    adjacent and the scan is linear; unsorted input would report a count near `k` no matter how
+    concentrated the set is.
+    """
+    k = particles.shape[0]
+    if k == 0:
+        return 0
+    distinct = 1
+    for i in range(1, k):
+        same = True
+        for j in range(particles.shape[1]):
+            if particles[i, j] != particles[i - 1, j]:
+                same = False
+                break
+        if not same:
+            distinct += 1
+    return distinct

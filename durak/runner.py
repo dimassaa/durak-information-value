@@ -67,6 +67,7 @@ from durak.rules import (
     settings_from_config,
 )
 from durak.strategies import (
+    AUTO_ATTACK,
     CHEATER_DOC,
     INFO_PARTICLES,
     INFO_TRUTH,
@@ -117,6 +118,11 @@ from durak.versions import ENGINE_VERSION, RULES_VERSION, SCHEMA_VERSION
 
 
 
+#: Strategies that exist to drive the engine and are refused in a tournament. See the check in
+#: `RunManifest.__post_init__`.
+TEST_ONLY_STRATEGY_IDS = frozenset({AUTO_ATTACK})
+
+
 @dataclass(frozen=True)
 class RunManifest:
     """Everything needed to rebuild a run. Serialised to JSON beside the dataset."""
@@ -145,6 +151,21 @@ class RunManifest:
                 raise ValueError(
                     f"unknown strategy id {strategy_id}; registered ids are {sorted(known)}"
                 )
+        # `AUTO_ATTACK` is refused in a TOURNAMENT, not merely discouraged in one. It never throws in,
+        # never beats, and always takes, so it cannot win a game in which anybody defends -- measured
+        # 100.0% losses with a mean loser hand of 34.00 and 0.00 beats. Pooled into a field it supplies
+        # 24.6% of games and nearly triples the mean loser's final hand, so any descriptive statistic
+        # computed over a tournament containing it describes IT rather than the game. It stays registered
+        # because the invariant and equivalence suites need a trivial driver whose anomalies point at the
+        # engine; those call `play_block` directly and never build a manifest, which is why this guard
+        # here is the right place and a note in the docs is not enough.
+        forbidden = sorted(set(self.strategies) & TEST_ONLY_STRATEGY_IDS)
+        if forbidden:
+            raise ValueError(
+                f"strategy id(s) {forbidden} are test-only drivers and cannot appear in a tournament: "
+                f"they are trivial by construction, so every aggregate computed over a field containing "
+                f"them describes the driver. Use them through `play_block`, as the invariant suites do."
+            )
         for regime in self.regimes:
             if regime not in REGIMES:
                 raise ValueError(f"unknown regime {regime!r}; expected one of {REGIMES}")
@@ -399,6 +420,44 @@ def _stamp_regime(outcomes, grid):
     return merged
 
 
+def _warm_engine_cache(strategies, deck_sizes) -> None:
+    """Compile the cached engine functions ONCE in this process before any worker is forked.
+
+    `@njit(cache=True)` writes a cache index that several processes updating it at the same instant race
+    on; the loser dies with `KeyError` inside `numba/core/caching.py` and the pool surfaces it as
+    `BrokenProcessPool`. It only bites on a COLD cache -- and the project's own working instructions tell
+    contributors to delete `__pycache__` before trusting a result, so the two habits collided and every
+    pool run failed at random. It cost two runs in one session.
+
+    Warming in the parent fixes it, because the workers then read a populated cache instead of writing one
+    concurrently. The lock file covers the remaining case: two runs started together would otherwise both
+    be cold and race each other, so the second waits for the first.
+
+    A failure here is never fatal. Warming is an optimisation of the failure mode, not a precondition for
+    the run, so a compile error is swallowed and the real run reports it properly rather than being
+    masked by a warm-up.
+    """
+    lock = Path(os.environ.get("TMPDIR", "/tmp")) / "durak-numba-warm.lock"
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        # Someone else is warming, or died doing it. Either way the cache is not ours to write.
+        return
+    try:
+        for strategy in strategies:
+            for deck_size in deck_sizes:
+                play_block(deck_size, int(strategy), int(strategy), InfoMode.NONE, InfoMode.NONE,
+                           0, 0, 0, 1, DEFAULT_SETTINGS, False, False)
+    except Exception:
+        pass
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        lock.unlink(missing_ok=True)
+
+
 def _resolve_workers(workers: int) -> int:
     """`0` means "decide at runtime", mirroring the manifest's convention, and is not zero workers."""
     if workers < 0:
@@ -473,6 +532,8 @@ def run_tournament(manifest: RunManifest, out_dir, workers: int = 0,
                           elapsed_seconds=time.perf_counter() - started)
 
     worker_count = _resolve_workers(workers)
+    if worker_count > 1 and len(jobs) > 1:
+        _warm_engine_cache(manifest.strategies, tuple(job.deck_size for job in jobs))
     if worker_count == 1 or len(jobs) == 1:
         # Serial on purpose for one worker: a pool of one pays process startup and pickling for no
         # parallelism, and this is the path the tests and every interactive run take.

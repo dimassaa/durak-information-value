@@ -185,7 +185,12 @@ def _build_round_dtype():
         # `(run_id, game_index)` alone fans out by 57 and every level-2 figure becomes an average over 57
         # unrelated games. Level 1 already carried the column for exactly this reason; levels 2 and 3 did
         # not, which is why no round- or move-level quantity could be attributed to a strategy at all.
-        ("attacker", "i4"), ("n_attacks", "i4"), ("n_throw_ins", "i4"),
+        ("attacker", "i4"),
+        # Renamed at schema version 3 from `n_attacks`. It counted ATTACK actions only -- the card that
+        # OPENED a round -- and throw-ins were tallied separately, so a Durak round opens with exactly
+        # one attack and this column read 1 in every single row of every dataset. The name invites
+        # "cards laid this round", which understates round activity by the throw-in count.
+        ("n_attack_openings", "i4"), ("n_throw_ins", "i4"),
         ("n_defenses", "i4"), ("defender_took", "?"), ("take_voluntary", "?"),
         ("hand_p0", "i4"), ("hand_p1", "i4"), ("deck_remaining", "i4"),
         ("trumps_p0", "i4"), ("trumps_p1", "i4"), ("roles_swapped", "?"),
@@ -490,8 +495,12 @@ def _play_one(outcomes, row_index, rounds, moves, rounds_start, moves_start, run
                 win_from_single[state.winner] = True
 
     if round_open:
+        # `state.round_idx - 1`, matching the in-game flush above. It was `state.round_idx`, which made
+        # levels emit one extra round record per game: 39,073,046 round rows against sum(games.rounds) of
+        # 37,933,046, a difference of exactly one per game. Harmless for totals and wrong for any per-game
+        # round count taken from level 2.
         rounds_written = _flush_round(
-            rounds, rounds_written, rounds_start, row, state, state.round_idx, round_attacker,
+            rounds, rounds_written, rounds_start, row, state, state.round_idx - 1, round_attacker,
             round_attacks,
             round_throw_ins, round_defenses, round_took, round_take_voluntary, round_roles_swapped,
             record_rounds,
@@ -596,7 +605,7 @@ def _flush_round(rounds, written, round_start, row, state, round_idx, attacker, 
     rec["pairing_index"] = row["pairing_index"]
     rec["round_idx"] = round_idx
     rec["attacker"] = attacker
-    rec["n_attacks"] = n_attacks
+    rec["n_attack_openings"] = n_attacks
     rec["n_throw_ins"] = n_throw_ins
     rec["n_defenses"] = n_defenses
     rec["defender_took"] = defender_took

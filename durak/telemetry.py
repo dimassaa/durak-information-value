@@ -121,7 +121,7 @@ def level2_schema() -> pa.Schema:
         # by the number of cells.
         pa.field("pairing_index", pa.int32()),
         pa.field("round_idx", pa.int32()), pa.field("attacker", pa.int32()),
-        pa.field("n_attacks", pa.int32()), pa.field("n_throw_ins", pa.int32()),
+        pa.field("n_attack_openings", pa.int32()), pa.field("n_throw_ins", pa.int32()),
         pa.field("n_defenses", pa.int32()), pa.field("defender_took", pa.bool_()),
         pa.field("take_voluntary", pa.bool_()),
         pa.field("hand_p0", pa.int32()), pa.field("hand_p1", pa.int32()),
