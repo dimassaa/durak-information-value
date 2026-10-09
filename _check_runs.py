@@ -22,27 +22,35 @@ from pathlib import Path
 EXPECTED = [
     ("R1 depth curve", "results/curves/depth_curve_deck_hidden_4x.txt",
      ["RESULT depth=1", "RESULT depth=2", "RESULT depth=3", "RESULT depth=4"]),
-    ("R2 oracle ceiling", "results/blocks/r2_oracle.txt",
+    ("R2 oracle ceiling (measured)", "results/blocks/r2_oracle.txt",
      ["ORACLE vs ORACLE_UNIFORM"]),
     ("R11 pilot", "results/blocks/r11_pilot.txt", ["games "]),
-    ("R3 weight sweep", "results/weights/sweep.log", ["exit="]),
 ]
 
-#: Runs with a known gate: the sweep is finished only when all twelve vectors have exited.
-SWEEP_EXPECTED_EXITS = 12
+#: The sweep has twelve vectors. Counted from transcripts rather than from the log's exit lines, which
+#: the shell appends and which can be lost if the loop's trailing marker never ran.
+SWEEP_EXPECTED_VECTORS = 12
 
 
 def check_sweep() -> tuple[str, str]:
-    """The sweep has two completion conditions, and both must hold."""
-    log = Path("results/weights/sweep.log")
-    if not log.exists():
-        return "MISSING", "results/weights/sweep.log does not exist"
-    text = log.read_text()
-    exits = text.count("exit=")
-    results = sum(1 for line in text.splitlines() if line.startswith("RESULT"))
-    if "=== weight sweep done" in text and exits >= SWEEP_EXPECTED_EXITS:
-        return "OK", f"{exits} vectors exited, {results} RESULT lines"
-    return "INCOMPLETE", f"{exits}/{SWEEP_EXPECTED_EXITS} vectors exited, {results} RESULT lines"
+    """The sweep is finished when all twelve PER-VARIANT transcripts carry a RESULT line.
+
+    Read from the per-variant files rather than from `sweep.log`, for two reasons. The RESULT line is
+    indented like every other measurement line, so an anchored `^RESULT` found nothing on a sweep that
+    had in fact completed. And the sweep's closing marker is a top-level command AFTER the loop, which
+    means its presence depends on a shell reading a file at a byte offset -- something this project has
+    already been bitten by. The per-variant transcripts are written by `timeout ... > file` and cannot be
+    affected by either.
+    """
+    files = sorted(Path("results/weights").glob("*.txt"))
+    if not files:
+        return "MISSING", "no per-variant transcripts"
+    with_result = [f for f in files
+                   if any(line.lstrip().startswith("RESULT")
+                          for line in f.read_text(errors="replace").splitlines())]
+    if len(with_result) >= SWEEP_EXPECTED_VECTORS:
+        return "OK", f"{len(with_result)} vectors measured"
+    return "INCOMPLETE", f"{len(with_result)}/{SWEEP_EXPECTED_VECTORS} vectors measured"
 
 
 def check_dataset() -> tuple[str, str]:
@@ -96,7 +104,8 @@ def main() -> int:
         else:
             rows.append((name, "OK", path))
 
-    rows.append(("R3 weight sweep (gated)", *check_sweep()))
+    sweep_status, sweep_detail = check_sweep()
+    rows.append(("R3 weight sweep (gated)", sweep_status, sweep_detail))
     rows.append(("R11 pilot (dataset on disk)", *check_dataset()))
 
     width = max(len(r[0]) for r in rows)
@@ -104,6 +113,15 @@ def main() -> int:
     for name, status, detail in rows:
         all_ok &= status == "OK"
         print(f"  {name:<{width}}  {status:<11} {detail}")
+
+    # A refusal or a traceback is a distinct state from "not finished": the run ended immediately and
+    # will never produce a result, so waiting on it is pointless. EITHER marker counts.
+    oracle = Path("results/blocks/r2_oracle.txt")
+    if oracle.exists():
+        text = oracle.read_text(errors="replace")
+        if "refusing to run" in text or "Traceback" in text:
+            rows.append(("R2 oracle ceiling", "FAILED",
+                         "the harness refused or crashed; see the transcript"))
 
     running = _live_chain_scripts()
     print(f"\n  chain scripts alive: {', '.join(running) if running else 'none'}")
