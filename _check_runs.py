@@ -20,7 +20,9 @@ from pathlib import Path
 
 #: (run, artefact, substrings that must ALL appear). A file's existence is not completion.
 EXPECTED = [
-    ("R1 depth curve", "results/curves/depth_curve_deck_hidden_4x.txt",
+    ("R1 curve (incumbent weights)", "results/curves/depth_curve_deck_hidden_4x.txt",
+     ["RESULT depth=1", "RESULT depth=2", "RESULT depth=3", "RESULT depth=4"]),
+    ("R1 curve (frozen instrument)", "results/curves/depth_curve_selected_weights_4x.txt",
      ["RESULT depth=1", "RESULT depth=2", "RESULT depth=3", "RESULT depth=4"]),
     ("R2 oracle ceiling (measured)", "results/blocks/r2_oracle.txt",
      ["ORACLE vs ORACLE_UNIFORM"]),

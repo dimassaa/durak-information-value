@@ -64,6 +64,17 @@ HIGH_RANK = 5
 #: (card count, trumps, high cards, role, deck exhausted).
 EVAL_WEIGHTS = (1.0, 2.0, 0.5, 0.3, 1.5)
 
+#: The vector this project measures with, frozen by the R3 sweep. Chosen on ABSOLUTE STRENGTH against a
+#: fixed panel and never on the delta -- tuning weights until the headline grows fits the answer to the
+#: question. Of the eleven vectors measured, the three best were the card-count rays, and this one led the
+#: panel by a wide margin (panel mean 0.688 against 0.259 for the incumbent, at 10,000 games per
+#: opponent). Its recorded delta at depth 2 was +0.0612; that is a RESULT, not the reason it was chosen.
+#:
+#: Why the distinction matters here: the depth curve was first measured with `EVAL_WEIGHTS`, which this
+#: sweep ranks sixth of eleven. A curve from a rejected instrument describes that instrument, so the
+#: curve was re-measured rather than published as the project's headline.
+SELECTED_WEIGHTS = (3.0, 2.0, 0.5, 0.3, 1.5)
+
 
 def _sweep_grid() -> tuple:
     """The weight perturbations Task 12 sweeps, one weight at a time.

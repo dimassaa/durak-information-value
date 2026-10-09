@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Mapping, Tuple
 
+from durak.evaluation import SELECTED_WEIGHTS
+
 # The tournament seed is bounded so every per-game seed derived from it stays
 # inside int64. An unbounded seed would make derived seeds overflow silently
 # rather than fail at configuration time.
@@ -31,7 +33,10 @@ MAX_SEED = 2**31 - 1
 # algorithm quality with tuning budget and would risk giving the informed and
 # uninformed arms different budgets, which would corrupt the primary metric. The
 # grid in analysis/sweeps.py perturbs these to show how much the result moves.
-DEFAULT_EVAL_WEIGHTS: Tuple[float, ...] = (1.0, 2.0, 0.5, 0.3, 1.5)
+#: The project's frozen instrument, not the original incumbent. See `evaluation.SELECTED_WEIGHTS` for
+#: how it was chosen and why selection on the delta was forbidden. One definition, imported: two
+#: literals that must agree is a pair of literals that will disagree.
+DEFAULT_EVAL_WEIGHTS: Tuple[float, ...] = SELECTED_WEIGHTS
 
 _ENV_PREFIX = "DURAK_"
 

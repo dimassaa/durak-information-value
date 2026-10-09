@@ -48,7 +48,7 @@ from durak.actions import (
     action_card,
     action_kind,
 )
-from durak.evaluation import EVAL_WEIGHTS
+from durak.evaluation import EVAL_WEIGHTS, SELECTED_WEIGHTS
 from durak.opponent import _draw_particles, _unseen_into, distinct_hypotheses
 from durak.rng import next_below
 from durak.strategies.base import InfoMode
@@ -76,7 +76,8 @@ SEARCH_DEPTH = int(os.environ.get("DURAK_SEARCH_DEPTH", "2"))
 #:
 #: Comma-separated, five terms, in `durak.evaluation.EVAL_WEIGHTS` order: card count, trumps, high cards,
 #: role, deck exhausted. The default is the incumbent, so an unset variable changes nothing.
-WEIGHTS = tuple(float(x) for x in os.environ.get("DURAK_EVAL_WEIGHTS", "1.0,2.0,0.5,0.3,1.5").split(","))
+_DEFAULT_WEIGHTS = ",".join(str(v) for v in SELECTED_WEIGHTS)
+WEIGHTS = tuple(float(x) for x in os.environ.get("DURAK_EVAL_WEIGHTS", _DEFAULT_WEIGHTS).split(","))
 
 #: Pinned spellings of the two information modes, so callers need not import the enum to say which arm
 #: they mean. Named here rather than at the call site because "the arm with the real hand" is the single

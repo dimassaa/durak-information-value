@@ -79,7 +79,7 @@ from durak.actions import (
     action_kind,
     pack_action,
 )
-from durak.config import Settings
+from durak.config import DEFAULT_EVAL_WEIGHTS, Settings
 from durak.evaluation import EVAL_SWEEP_GRID, EVAL_WEIGHTS, evaluate
 from durak.leaf import leaf_profile_after, leaf_profile_after_ply3, reply_cards_in
 from durak.opponent import initial_particles
@@ -240,11 +240,21 @@ def test_the_deck_exhausted_term_makes_holding_fewer_cards_a_disadvantage():
 def test_the_weights_are_the_ones_the_config_declares():
     """One source of truth.
 
-    `Settings.eval_weights` and `EVAL_WEIGHTS` must agree, or the manifest records a configuration the
-    search did not use -- and a sweep over weights that do not match the run's weights is a sensitivity
-    analysis of a different experiment.
+    The invariant is that the manifest records the configuration the SEARCH used, so the comparison is
+    against `search_policy.WEIGHTS` -- the value the compiled policy actually reads -- and not against a
+    constant in another module. Comparing against `EVAL_WEIGHTS` was correct while the constant WAS the
+    instrument; after the R3 sweep froze `SELECTED_WEIGHTS` as the instrument, `EVAL_WEIGHTS` became the
+    original incumbent, kept as the sweep's reference row. Asserting the config still equalled it would
+    have enforced the wrong thing.
+
+    The second assertion is the one that would actually bite: `EVAL_WEIGHTS` has to stay five terms,
+    because spec 5.4 defines five and the sweep's vectors are written in that order.
     """
-    assert tuple(Settings().eval_weights) == tuple(EVAL_WEIGHTS)
+    from durak.evaluation import SELECTED_WEIGHTS
+    from durak.strategies.search_policy import WEIGHTS as SEARCH_WEIGHTS
+
+    assert tuple(Settings().eval_weights) == tuple(SEARCH_WEIGHTS)
+    assert tuple(DEFAULT_EVAL_WEIGHTS) == tuple(SELECTED_WEIGHTS)
     assert len(EVAL_WEIGHTS) == 5, "spec 5.4 defines five terms"
 
 
