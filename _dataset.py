@@ -19,7 +19,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from durak.config import Settings
-from durak.evaluation import EVAL_WEIGHTS
 from durak.runner import RunManifest, run_tournament
 from durak.strategies import (
     AUTO_DEFEND,
@@ -45,8 +44,11 @@ STRATEGIES = (RANDOM, GREEDY, AUTO_DEFEND, CONSERVATIVE,
 
 
 def main():
+    # Read the arms' own frozen value, NOT `EVAL_WEIGHTS`. It printed the incumbent while the search
+    # played the selected vector, so the console claimed a configuration the dataset did not use -- the
+    # same defect as the oracle's. The manifest was always right; only the line a reader trusted was wrong.
     from durak.opponent import MEMORY_PLY
-    from durak.strategies.search_policy import PARTICLE_COUNT, SEARCH_DEPTH
+    from durak.strategies.search_policy import PARTICLE_COUNT, SEARCH_DEPTH, WEIGHTS
 
     out = Path("datasets") / NAME
     settings = replace(Settings(), games_per_pairing=GAMES_PER_PAIRING)
@@ -63,8 +65,7 @@ def main():
     # The configuration that decides every number in the dataset, printed before the run so it cannot
     # be separated from the result.
     print(f"  SEARCH_DEPTH={SEARCH_DEPTH}  MEMORY_PLY={MEMORY_PLY}  PARTICLE_COUNT={PARTICLE_COUNT}", flush=True)
-    print(f"  weights={tuple(float(v) for v in EVAL_WEIGHTS)}  records levels<={2 if RECORD_LEVELS else 1}",
-          flush=True)
+    print(f"  weights={WEIGHTS}  records levels<={2 if RECORD_LEVELS else 1}", flush=True)
 
     summary = run_tournament(manifest, out, workers=WORKERS,
                              record_rounds=RECORD_LEVELS, record_moves=RECORD_LEVELS)

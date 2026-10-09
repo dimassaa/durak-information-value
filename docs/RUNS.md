@@ -155,24 +155,23 @@ pilot, and none would have been caught by a full run. The pilot runs first, ever
 
 ### R13. Sensitivity grid — 228,000 games
 
-2,000 per cell across the deck × rule × position grid, including the rule variants of R14. ≈ 7 minutes.
+2,000 per cell across the deck × rule × position grid. ≈ 7 minutes.
 
 ---
 
-## R14. Rule variant: first defence is five cards
+## R14. ~~Rule variant: first defence is five cards~~ — WITHDRAWN
 
-Several sources state the first defence round is capped at five cards rather than six. A `RuleTunables` field
-and a branch in `_throwin_legal` — and in `leaf._throwin_legal_in`, which is a **second implementation that
-must agree with the first**. Measured under both readings, paired, same seed and same games.
+**Withdrawn at the user's direction as not worth measuring.** Several sources do state the cap of five
+rather than six, and the divergence is real. It was withdrawn on relevance, not on correctness: it is a
+rule-reading disagreement whose only output is a sensitivity number on the published delta, and the
+project's own position is that the headline is a RANGE over the rule readings rather than a point. It
+therefore adds a coordinate to an existing range without being able to change any conclusion.
 
-**The second implementation is the risk.** The leaf exists because `GameState` cannot be constructed inside
-compiled code, so the throw-in legality test is duplicated. A change to one and not the other is a silent
-model divergence, and its differential tests against the engine would pass on the path that was updated.
+Withdrawing it also removes a real implementation hazard that was the most expensive thing in its
+section: the change needed a branch in `_throwin_legal` AND in `leaf._throwin_legal_in`, a duplicated
+implementation, and a divergence between them would be silent. That risk is not incurred.
 
-**Why this variant and not the other.** The deck-empty throw-in variant acts in the endgame, where a
-quarter of games end with the loser holding 32+ cards — but those are `AUTO_ATTACK` games, and that
-baseline is degenerate (it never defends, and loses 100% of them). Measuring a rule against a null opponent
-would produce a number about the null opponent. The five-card cap is the variant with a clean read.
+`R13` no longer depends on it.
 
 ---
 
@@ -184,7 +183,7 @@ would produce a number about the null opponent. The five-card cap is the variant
 | B1 | R1, R2, R11 | ≈ 60 min | depth chosen, ceiling known |
 | B2 | R3, R5, R9 | ≈ 90 min | weights frozen |
 | C | R12, R13 | ≈ 45 min | headline published |
-| D | R6, R7, R8, R10, R14 | ≈ 40 min + schema work | robustness published |
+| D | R6, R7, R8, R10 | ≈ 40 min + schema work | robustness published |
 
 ≈ 2.9M games, ≈ 4 hours of measurement plus the model work in block A. **The games are not the cost** — the
 cost is making depth, weights and memory configurable, and the duplicated legality test in the leaf.

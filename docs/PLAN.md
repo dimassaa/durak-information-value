@@ -173,7 +173,9 @@ number can be *characterised* without it.
 revealed from the last card rather than the next — statistically identical under a uniform shuffle,
 so no result depends on it) and two rules not implemented at all:
 
-- the first defence round capped at five cards, which several sources state;
+- the first defence round capped at five cards, which several sources state. **Now withdrawn as a
+  measurement** (`RUNS.md` R14): it is a rule-reading coordinate on a range that already exists, and
+  measuring it would have required editing a duplicated legality test in two places at once.
 - throwing in more cards than the defender holds once the draw pile is empty.
 
 The second matters more than it looks: it acts in the endgame, where 24.6% of games end with the loser

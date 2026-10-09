@@ -106,7 +106,10 @@ is not safe because it is central, and the counterexample is on the record.
 **Two known divergences, both real.** The trump is revealed from the LAST card where sources say the next
 (statistically identical under a uniform shuffle, so no result depends on it). And two rules are not
 implemented: a first-defence cap of five cards, and throwing in beyond the defender's hand once the draw
-pile is empty — the second acting in the endgame, where 24.6% of games end with the loser on 32–35 cards.
+pile is empty — the second acting in the endgame. The first is **withdrawn as a measurement**
+(`RUNS.md` R14): a rule-reading coordinate on a range already reported, not a result that could change a
+conclusion. The second remains the live divergence, and it is the one that matters: it acts where the
+games actually end.
 
 ### H6 — the measurement machinery is honest
 
