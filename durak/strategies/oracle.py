@@ -94,7 +94,7 @@ from numba import njit
 from durak.evaluation import EVAL_WEIGHTS
 from durak.rules import GameState
 from durak.search import _expectimax
-from durak.strategies.search_policy import (PARTICLE_COUNT, _deck_hypotheses, _prior_particles,
+from durak.strategies.search_policy import (PARTICLE_COUNT, WEIGHTS as SEARCH_WEIGHTS, _deck_hypotheses, _prior_particles,
                                          _truth_particles)
 
 #: Ply depth the oracle searches to. Read from the environment rather than assigned literally,
@@ -103,6 +103,13 @@ from durak.strategies.search_policy import (PARTICLE_COUNT, _deck_hypotheses, _p
 #: invalidate. Measured at depths 1-4 in this project; see `docs/PLAN.md` item 2 for why depth is a
 #: research parameter and not a performance knob.
 ORACLE_DEPTH = int(os.environ.get("DURAK_ORACLE_DEPTH", "4"))
+
+#: The evaluation weights this arm plays with, taken FROM the search arms' own value rather than
+#: re-spelled here. It used to import `EVAL_WEIGHTS` directly, and the moment the R3 sweep froze a
+#: different vector as the project's instrument the two diverged: the published delta would have been
+#: measured with one vector and the ceiling bounding it with another. Reading it from the arms makes that
+#: divergence impossible rather than merely documented.
+ORACLE_WEIGHTS = SEARCH_WEIGHTS
 
 
 @njit(cache=True)
@@ -123,7 +130,7 @@ def policy_oracle(state: GameState, player: int, strategy_id: int, info_mode: in
     """
     hand = _truth_particles(state, 1 - player)
     return _expectimax(state, player, hand, _deck_hypotheses(state, hand, player, np.uint64(1)),
-                       EVAL_WEIGHTS, ORACLE_DEPTH)
+                       ORACLE_WEIGHTS, ORACLE_DEPTH)
 
 
 @njit(cache=True)
@@ -145,4 +152,4 @@ def policy_oracle_uniform(state: GameState, player: int, strategy_id: int, info_
     """
     hand = _prior_particles(state, 1 - player, PARTICLE_COUNT, np.uint64(rng_state))
     return _expectimax(state, player, hand, _deck_hypotheses(state, hand, player, np.uint64(rng_state)),
-                       EVAL_WEIGHTS, ORACLE_DEPTH)
+                       ORACLE_WEIGHTS, ORACLE_DEPTH)

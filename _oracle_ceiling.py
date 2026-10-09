@@ -165,11 +165,10 @@ def depth_reach_probe(game_count=400):
     depth-4 searches happen to agree on every one of them, so the check reported a collision where
     there was none. Byte-identical games under an identical seed have no such false positive.
     """
-    from durak.evaluation import EVAL_WEIGHTS
     from durak.search import expectimax
     from durak.strategies import get_policy
-    from durak.strategies.oracle import ORACLE_DEPTH
-    from durak.strategies.search_policy import _truth_particles
+    from durak.strategies.oracle import ORACLE_DEPTH, ORACLE_WEIGHTS
+    from durak.strategies.search_policy import _deck_hypotheses, _truth_particles
     from tests.support import random_position
 
     oracle = get_policy(ORACLE)
@@ -179,8 +178,18 @@ def depth_reach_probe(game_count=400):
         player = acting_player(state)
         if state.winner != EMPTY or legal_actions(state, player).size == 0:
             continue
-        expected = int(expectimax(state, player, _truth_particles(state, 1 - player),
-                                  EVAL_WEIGHTS, ORACLE_DEPTH))
+        # `expectimax` takes the deck hypotheses too, since the leaf consumes the deck from the END and
+        # the pile is no longer public. This call site still had the pre-deck-hiding arity, so the weight
+        # vector arrived where `hypo_decks` was expected and Numba failed typing `_prepare` on
+        # `float64.shape` -- deep inside a compiled function, from a harness line that had not been run
+        # since the signature changed.
+        #
+        # The deck hypotheses and the weights are the oracle's OWN, so this asks the question the probe
+        # means to ask: does the oracle answer exactly as the shared search does at `ORACLE_DEPTH`?
+        hand = _truth_particles(state, 1 - player)
+        expected = int(expectimax(state, player, hand,
+                                  _deck_hypotheses(state, hand, player, np.uint64(1)),
+                                  ORACLE_WEIGHTS, ORACLE_DEPTH))
         chosen = int(oracle(state, player, ORACLE, NONE, np.uint64(seed)))
         matched += int(chosen == expected)
         compared += 1

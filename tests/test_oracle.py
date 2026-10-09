@@ -30,7 +30,6 @@ import numpy as np
 
 from durak import rules
 from durak.actions import ATTACK, TAKE, action_card, action_kind, pack_action
-from durak.evaluation import EVAL_WEIGHTS
 from durak.leaf import leaf_profile_after
 from durak.opponent import _unseen_into
 def _deck_hypo(state, particles):
@@ -59,7 +58,8 @@ from durak.strategies import (
     registered_ids,
 )
 from durak.strategies.oracle import ORACLE_DEPTH
-from durak.strategies.search_policy import SEARCH_DEPTH, _deck_hypotheses, _truth_particles
+from durak.evaluation import EVAL_WEIGHTS
+from durak.strategies.search_policy import SEARCH_DEPTH, WEIGHTS as SEARCH_WEIGHTS, _deck_hypotheses, _truth_particles
 from tests.support import Pool, legal_state, random_position
 
 #: Real mid-game positions, reached by random play from a real deal. Constructed fixtures exercise one
@@ -120,7 +120,7 @@ def test_the_deep_pair_is_registered_and_is_one_class():
         particles = _prior_particles(state, 1 - player, PARTICLE_COUNT, stream)
         expected = int(expectimax(state, player, particles,
                    _deck_hypotheses(state, particles, player, np.uint64(index)),
-                   EVAL_WEIGHTS, ORACLE_DEPTH))
+                   SEARCH_WEIGHTS, ORACLE_DEPTH))
 
         chosen = int(uniform(state, player, ORACLE_UNIFORM, int(InfoMode.NONE), stream))
         informed = int(oracle(state, player, ORACLE, int(InfoMode.TRUTH), stream))
@@ -217,7 +217,7 @@ def test_the_oracle_is_the_shared_search_at_the_configured_depth():
         particles = _truth_particles(state, 1 - player)
         expected = int(expectimax(state, player, particles,
                    _deck_hypotheses(state, particles, player, np.uint64(index)),
-                   EVAL_WEIGHTS, ORACLE_DEPTH))
+                   SEARCH_WEIGHTS, ORACLE_DEPTH))
 
         chosen = int(oracle(state, player, ORACLE, int(InfoMode.TRUTH), np.uint64(index)))
 
@@ -443,3 +443,16 @@ def test_the_unseen_set_contains_the_visible_draw_pile():
             checked += 1
 
     assert checked > 0
+
+def test_the_oracle_arm_evaluates_with_the_same_weights_as_the_search_arms():
+    """A ceiling computed with a different weight vector bounds a different experiment.
+
+    The oracle passed `EVAL_WEIGHTS` while the search arms read `search_policy.WEIGHTS`. When the R3 sweep
+    froze a different vector as the project's instrument, the two silently diverged, and a ceiling
+    measured against the old vector would not bound the published delta at all. Deriving the oracle's
+    vector FROM the arms' vector removes the possibility rather than documenting it.
+    """
+    from durak.strategies.oracle import ORACLE_WEIGHTS
+    from durak.strategies.search_policy import WEIGHTS
+
+    assert tuple(ORACLE_WEIGHTS) == tuple(WEIGHTS)
