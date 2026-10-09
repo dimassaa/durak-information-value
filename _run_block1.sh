@@ -23,7 +23,7 @@ echo "=== block B1 resumed $(date -Is), curve finished ===" | tee -a results/blo
 
 # --- R2, oracle ceiling ---------------------------------------------------------------------
 rm -rf durak/__pycache__ durak/strategies/__pycache__
-DURAK_SEARCH_DEPTH=4 DURAK_ORACLE_DEPTH=4 ORACLE_GAMES=20000 ORACLE_WORKERS=8 \
+DURAK_SEARCH_DEPTH=4 DURAK_ORACLE_DEPTH=4 ORACLE_GAMES=6000 ORACLE_WORKERS=8 \
   timeout 21600 .venv/bin/python _oracle_ceiling.py > results/blocks/r2_oracle.txt 2>&1
 echo "R2 oracle exit=$? at $(date -Is)" | tee -a results/blocks/block1.log
 
