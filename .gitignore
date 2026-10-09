@@ -35,3 +35,4 @@ datasets/
 # Measurement output. Large, regenerable from a seed, and kept out of git -- but NOT in /tmp,
 # which has been wiped twice in one session and took a 1.14M-game dataset with it.
 results/
+.numba_cache/

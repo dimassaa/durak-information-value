@@ -12,7 +12,7 @@ for spec in "1 8000" "2 4000" "3 2000" "4 1000"; do
   d=$1; g=$2
   rm -rf durak/__pycache__ durak/strategies/__pycache__
   DURAK_SEARCH_DEPTH=$d timeout 5400 .venv/bin/python _depth_curve.py $d "$g" 2>&1 \
-    | grep -E "^RESULT|^  (informed|DELTA|uniform|wall)"
+    | grep --line-buffered -E "^RESULT|^  (informed|DELTA|uniform|wall)"
 done
 
 # Nothing this project measures is written under /tmp. It has been wiped twice in one session and took a
