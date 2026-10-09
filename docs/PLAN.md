@@ -194,6 +194,19 @@ Fix: stamp `pairing_index` onto the round and move schemas, bump `SCHEMA_VERSION
 it invalidates every existing dataset, so it is done *after* the depth curve, or the depth curve would
 have to be run twice.
 
+**Status: done.** Committed in `a939b18`; schema version 3. The gate: on a 350-game tournament 7,252
+level-2 rows belong to exactly 350 distinct games, while 50 `game_index` values still collide across
+cells -- which is the defect shown rather than asserted.
+
+The order was honoured. The curve in `results/curves/depth_curve_deck_hidden_first_pass.txt` predates
+the fix and is unaffected by it, because the fix changes what a round row can be *attributed to* and
+not what any game did. The additivity fingerprint confirms it: every pre-existing level-1 column is
+bit-identical before and after (`4e1036ae98955094`).
+
+Two further schema bumps followed, both additive and both gated the same way: version 4 carries
+`distinct_hypotheses_sum` and `search_decisions`, and the level-2 rename of `n_attacks` to
+`n_attack_openings` came with the round-record off-by-one fix.
+
 ## 9. What may never be claimed
 
 - **That "the price of information" is a number.** It is a function of depth, of the weight vector, of

@@ -7,7 +7,7 @@
 # available. Shrunken counts buy the SIGN at every depth and cost precision at the deep ones, and the
 # precision actually achieved is printed per depth rather than assumed.
 cd /home/dimass/opencode/durak
-for spec in "1 2000" "2 1000" "3 500" "4 250"; do
+for spec in "1 8000" "2 4000" "3 2000" "4 1000"; do
   set -- $spec
   d=$1; g=$2
   rm -rf durak/__pycache__ durak/strategies/__pycache__
