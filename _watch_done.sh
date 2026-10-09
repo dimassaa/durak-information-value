@@ -1,26 +1,30 @@
 #!/bin/bash
-# Waits for every chain script to exit, then writes results/RUNS_COMPLETE.md from _check_runs.py.
+# Waits for every measurement chain to exit, then writes results/RUNS_COMPLETE.md.
 #
-# Exists because nothing else will tell me. A run launched with `setsid ... &` is detached, and the shell
-# command that launched it returns at once, so the harness reports THAT command as completed and the
-# notification says nothing about the run. Polling for it costs a turn every time and depends on me
-# asking. This watcher does the waiting, so the only thing anyone has to do afterwards is read one file.
+# Waiting is by PID file, never by `pgrep -f` on a script name. A chain launched from a shell wrapper
+# whose command line contains its own script text matches ITSELF, and then waits forever for a process
+# that cannot exit -- which is exactly what happened to block6, for 36 minutes on an idle machine.
 #
 # A chain that dies leaves a transcript but no sentinel, and the sentinel is written only when the check
-# passes -- so the sentinel's presence is evidence, not an assumption. Absence means read the checker's
-# table, which distinguishes MISSING from INCOMPLETE.
+# passes. So the sentinel's presence is evidence; its absence means read the checker's table, which
+# separates MISSING from INCOMPLETE and FAILED.
 set -u
 cd /home/dimass/opencode/durak
 mkdir -p results
 
 while true; do
-  alive=$(ps -eo args --no-headers | grep -cE "_run_(block1|block2|memory|weights)\.sh" || true)
+  alive=0
+  for pidfile in results/blocks/*.pid; do
+    [ -e "$pidfile" ] || continue
+    pid=$(cat "$pidfile" 2>/dev/null || true)
+    [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null && alive=$((alive + 1))
+  done
   [ "$alive" -eq 0 ] && break
   sleep 60
 done
 
-echo "=== all chain scripts exited $(date -Is) ===" > results/RUNS_COMPLETE.md
+echo "=== all chains exited $(date -Is) ===" > results/RUNS_COMPLETE.md
 .venv/bin/python _check_runs.py >> results/RUNS_COMPLETE.md 2>&1
 echo "" >> results/RUNS_COMPLETE.md
-echo "Written $(date -Is). Re-check at any time with: .venv/bin/python _check_runs.py" \
+echo "Written $(date -Is). Re-check any time with: .venv/bin/python _check_runs.py" \
   >> results/RUNS_COMPLETE.md

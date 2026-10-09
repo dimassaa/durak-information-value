@@ -69,7 +69,11 @@ def check_dataset() -> tuple[str, str]:
     return "OK", f"{len(parquet)} parquet file(s), anomalies 0"
 
 
-CHAIN_SCRIPTS = ("_run_block1.sh", "_run_block2.sh", "_run_memory.sh", "_run_weights.sh")
+#: Chain scripts are DISCOVERED from the repository, not listed here. A hardcoded list reported
+#: "ALL RUNS COMPLETE" while a fifth chain was still running, because nobody had remembered to add it --
+#: and a completion signal that can be wrong by omission is worse than no signal at all.
+def _chain_script_names() -> list[str]:
+    return sorted(p.name for p in Path(".").glob("_run_*.sh"))
 
 
 def _live_chain_scripts() -> list[str]:
@@ -79,6 +83,7 @@ def _live_chain_scripts() -> list[str]:
     the check. A process that exits between listing and reading is simply not counted: the artefact
     checks above are what decide completion, and this only says whether to keep waiting.
     """
+    scripts = _chain_script_names()
     live = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -87,8 +92,7 @@ def _live_chain_scripts() -> list[str]:
             cmdline = (entry / "cmdline").read_bytes().decode(errors="replace")
         except OSError:
             continue
-        if any(script in cmdline for script in CHAIN_SCRIPTS):
-            live.extend(s for s in CHAIN_SCRIPTS if s in cmdline)
+        live.extend(s for s in scripts if s in cmdline)
     return sorted(set(live))
 
 
@@ -126,9 +130,13 @@ def main() -> int:
                          "the harness refused or crashed; see the transcript"))
 
     running = _live_chain_scripts()
+    complete = all_ok and not running
     print(f"\n  chain scripts alive: {', '.join(running) if running else 'none'}")
-    print("  ALL RUNS COMPLETE" if all_ok and not running else "  NOT COMPLETE")
-    return 0 if all_ok else 1
+    print("  ALL RUNS COMPLETE" if complete else "  NOT COMPLETE")
+    # The exit code follows the printed verdict. They disagreed once already, which makes a check that
+    # cannot be trusted for automation worse than no check: `NOT COMPLETE` with status 0 is indistinguishable
+    # from success to anything that reads the code.
+    return 0 if complete else 1
 
 
 if __name__ == "__main__":
