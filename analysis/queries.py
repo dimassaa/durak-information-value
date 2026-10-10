@@ -875,6 +875,11 @@ def build_all(dataset_dir, out_dir, sweeps_dir=None) -> list:
         "endgame_degeneracy": endgame_degeneracy,
         "throw_in_limits": throw_in_limits,
         "deck_split": deck_split,
+        # Added once the primary dataset existed. The trump curve is the one stratifier fixed before the
+        # first card, and the phase profile is descriptive precisely because a per-phase delta is not
+        # admissible -- both facts are stated in the documents themselves rather than left to the reader.
+        "trump_stratification": trump_stratification,
+        "phase_profile": phase_profile,
     }
     # The rule-variant sweep reads two other datasets rather than this one, so it is the only
     # document whose input is not `dataset_dir`.
@@ -928,3 +933,131 @@ def _read_manifest_settings(dataset_dir) -> dict:
     if not manifest.exists():
         return {}
     return json.loads(manifest.read_text()).get("settings", {})
+
+def trump_stratification(dataset_dir) -> dict:
+    """The delta by number of trumps in the OPENING DEAL.
+
+    The stratifier is fixed before any move is played, and that is the whole reason it is admissible.
+    This project retracted a curve once because its stratifier was produced by the arms' own actions, so
+    a bucket defined by what the policies did selected on the treatment. `initial_trumps_p0/p1` come from
+    the deal, so a bucket cannot be an effect.
+
+    The curve may be REPORTED. No mechanism may be attached to it: whether abundant trumps matter because
+    hands become homogeneous, or because the trump hierarchy becomes more decisive, is untested, and a
+    report that names a cause is making up a result.
+    """
+    con = _connect(dataset_dir)
+    buckets = con.execute(f"""
+        SELECT g.initial_trumps_p0 + g.initial_trumps_p1 AS trumps,
+               COUNT(*) AS games,
+               AVG(CASE WHEN g.winner = 0 THEN 1.0 ELSE 0.0 END) AS seat0_rate
+        FROM games AS g
+        WHERE g.deck_size = {PRIMARY_DECK_SIZE} AND g.winner >= 0
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+
+    # The head-to-head delta within each bucket, both seat orders, arm resolved through the seat.
+    rows = con.execute(f"""
+        SELECT g.initial_trumps_p0 + g.initial_trumps_p1 AS trumps,
+               CASE WHEN g.winner = 0 THEN g.strategy_p0 ELSE g.strategy_p1 END AS winner_strategy
+        FROM games AS g
+        WHERE g.deck_size = {PRIMARY_DECK_SIZE} AND g.winner >= 0
+          AND ((g.strategy_p0 = {SEARCH_INFORMED} AND g.strategy_p1 = {SEARCH_UNIFORM})
+            OR (g.strategy_p0 = {SEARCH_UNIFORM} AND g.strategy_p1 = {SEARCH_INFORMED}))
+    """).fetchall()
+    con.close()
+
+    per_bucket: dict = {}
+    for trumps, winner in rows:
+        per_bucket.setdefault(int(trumps), []).append(1.0 if int(winner) == SEARCH_INFORMED else -1.0)
+
+    curve = []
+    for trumps, games, seat0_rate in buckets:
+        deltas = per_bucket.get(int(trumps), [])
+        n = len(deltas)
+        point = float(np.mean(deltas)) if n else None
+        half = None
+        if n > 1:
+            # A normal interval on a per-game +/-1 outcome. Deliberately not the project's paired
+            # bootstrap: within one bucket the pairs are still the same games, and this document is a
+            # curve whose shape is the point, not a hypothesis test.
+            half = float(1.96 * np.std(deltas, ddof=1) / np.sqrt(n))
+        curve.append({
+            "initial_trumps": int(trumps),
+            "games": int(games),
+            "seat0_win_rate": float(seat0_rate) if seat0_rate is not None else None,
+            "head_to_head_games": n,
+            "delta": point,
+            "ci": None if half is None else [point - half, point + half],
+        })
+
+    return {
+        "metric": "trump_stratification",
+        "deck_size": PRIMARY_DECK_SIZE,
+        "stratifier": "initial trumps in the deal, both seats, fixed before any move",
+        "stratifier_is_treatment_independent": True,
+        "buckets": len(curve),
+        "curve": curve,
+        "caution": "the curve is reportable; no mechanism is. Whether trumps matter through hand "
+                   "homogeneity or through the trump hierarchy is untested and must not appear.",
+    }
+
+
+def phase_profile(dataset_dir) -> dict:
+    """The shape of play by phase, and an explicit statement of what cannot be concluded from it.
+
+    Phases are cut on the draw pile: early, mid, and late. This document reports where the ROUNDS are,
+    because that is admissible: it describes the corpus and touches no arm's outcome.
+
+    **The per-phase attribution of the delta is NOT reported, and must not be built from this data.**
+    Every phase variable -- rounds survived, deck remaining, hand sizes, whether the pile ran out -- is
+    produced by the arms' own actions during the game. Stratifying the delta on any of them conditions on
+    a post-treatment variable, which is the exact error that made this project retract a curve once. The
+    clean stratifier is the one fixed before the first card is played, and that is the trump curve in
+    `trump_stratification`, not this.
+
+    So the honest answer to "when in a game does information pay" is: not answerable with a paired
+    outcome per game, and the reason is structural rather than a missing measurement.
+    """
+    con = _connect(dataset_dir)
+    by_phase = con.execute("""
+        SELECT phase, COUNT(*) AS rounds,
+               COUNT(DISTINCT (run_id, pairing_index, game_index)) AS games,
+               AVG(deck_remaining) AS mean_deck, AVG(hand_p0 + hand_p1) AS mean_hands,
+               AVG(n_throw_ins) AS mean_throw_ins, AVG(n_defenses) AS mean_defenses,
+               AVG(CASE WHEN defender_took THEN 1.0 ELSE 0.0 END) AS take_rate
+        FROM rounds GROUP BY 1 ORDER BY 1
+    """).fetchall()
+
+    # Where games END, which is the part of the profile that bears on the decisive phase.
+    endings = con.execute(f"""
+        SELECT r.phase, COUNT(*) AS games
+        FROM rounds AS r
+        JOIN games AS g
+          ON g.run_id = r.run_id AND g.pairing_index = r.pairing_index
+         AND g.game_index = r.game_index
+        WHERE g.deck_size = {PRIMARY_DECK_SIZE}
+          AND r.round_idx = g.rounds - 1
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    con.close()
+
+    total_rounds = sum(int(n) for _p, n, *_ in by_phase) or 1
+    return {
+        "metric": "phase_profile",
+        "deck_size": PRIMARY_DECK_SIZE,
+        "phase_definition": "cut on the draw pile: early, mid, late",
+        "by_phase": [{
+            "phase": int(p), "rounds": int(n), "games": int(g),
+            "share_of_rounds": int(n) / total_rounds,
+            "mean_deck_remaining": float(d), "mean_hands_total": float(h),
+            "mean_throw_ins": float(ti), "mean_defenses": float(df), "take_rate": float(tr),
+        } for p, n, g, d, h, ti, df, tr in by_phase],
+        "games_ending_in_phase": [{"phase": int(p), "games": int(n)} for p, n in endings],
+        "per_phase_delta": None,
+        "per_phase_delta_admissible": False,
+        "why_not": "every phase variable is produced by the arms' own actions, so conditioning the delta "
+                   "on it selects on the treatment -- the error that made this project retract a curve. "
+                   "The one stratifier fixed before the first card is played is the opening deal's trump "
+                   "count, which is reported in `trump_stratification`.",
+    }

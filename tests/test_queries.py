@@ -12,6 +12,7 @@ against zero can cross the line from "not significant" to "significant", and the
 that from the JSON.
 """
 
+import re
 import json
 from pathlib import Path
 
@@ -325,21 +326,39 @@ def test_game_index_is_cell_local_so_it_is_not_a_game_key(tmp_path):
 def test_the_reports_measure_from_level_one_only():
     """The constraint, stated where a future query author will read it.
 
-    Levels 2 and 3 cannot be joined to level 1 without a 57-fold fan-out on a multi-cell tournament,
-    because they carry no `pairing_index` and `game_index` is cell-local. Rather than trust every
-    future author to remember, this asserts the fact that makes it true, and points at the backlog.
+    Originally a blanket ban: no query's SQL may mention `rounds` or `moves`, because those levels
+    carried no `pairing_index` and `game_index` is cell-local, so joining them to `games` fanned out 57-fold
+    and every level-2 figure became an average over 57 unrelated games.
+
+    **That premise expired.** Schema version 3 stamped `pairing_index` onto levels 2 and 3, and the join
+    is now exact: on a 350-game tournament, 7,252 level-2 rows belong to exactly 350 distinct games. A
+    blanket ban would have kept forbidding correct queries, and would have forbade `phase_profile`
+    outright -- a document whose whole point is that the per-phase delta is NOT admissible, which cannot be
+    stated without touching the level at all.
+
+    So the invariant is the one that actually matters: any query that reaches level 2 or 3 must join it on
+    `pairing_index` and not on `game_index` alone. A query that reads level 2 without joining needs no key
+    at all, because it is not attributing a row to a strategy.
     """
     import analysis.queries as queries
 
     source = Path(queries.__file__).read_text(encoding="utf-8")
 
-    # `rounds` and `moves` must not appear in any query's SQL. `_participation` and the new
-    # report-2/3 queries all read `games`, whose per-game columns need no join.
-    for level in ("FROM rounds", "FROM moves", "JOIN rounds", "JOIN moves"):
-        assert level not in source, (
-            f"a report query references the {level.split()[-1]} level; it carries no pairing_index, "
-            f"so joining it to games fans out across cells. See IMPROVEMENTS.md item 41."
-        )
+    # Per function, so a `pairing_index` used by one query cannot vouch for another.
+    bodies = re.split(r"\ndef ", source)
+    checked = 0
+    for body in bodies:
+        if "FROM rounds" not in body and "FROM moves" not in body:
+            continue
+        checked += 1
+        name = body.split("(")[0]
+        if re.search(r"\bJOIN\b", body) or "FROM games" in body:
+            assert "pairing_index" in body, (
+                f"query {name!r} reaches level 2 or 3 together with level 1 but does not join on "
+                f"`pairing_index`. `game_index` is cell-local, so that join fans out across cells and "
+                f"the level-2 rows get averaged over unrelated games."
+            )
+    assert checked, "no query reads level 2 or 3; if that is intended, say so here explicitly"
 
 
 # --- pairwise matchups --------------------------------------------------------------
