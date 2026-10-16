@@ -73,12 +73,20 @@ EVAL_WEIGHTS = (1.0, 2.0, 0.5, 0.3, 1.5)
 #: Why the distinction matters here: the depth curve was first measured with `EVAL_WEIGHTS`, which this
 #: sweep ranks sixth of eleven. A curve from a rejected instrument describes that instrument, so the
 #: curve was re-measured rather than published as the project's headline.
-#: **The stronger instrument has the SMALLER headline: +0.0460 against +0.0612.** That is the selection
-#: rule working rather than failing, and it is stated here because selecting on the delta would have kept
-#: the weaker vector and called it an improvement. Everything measured under `cards_3x` -- the depth curve,
-#: both oracle ceilings, the memory horizon, the seed sweep -- describes THAT vector, and was re-measured
-#: rather than published beside a headline from this one.
-SELECTED_WEIGHTS = (3.0, 2.0, 0.5, 0.3, 0.5)
+#: **A STRONGER VECTOR EXISTS AND IS NOT ADOPTED, which is a stated limitation rather than a clean result.**
+#: R4's surface found `(3.0, 2.0, 0.5, 0.3, 0.5)`, which at ONE scale -- 10,000 games per opponent, the
+#: same seed, the same panel -- beats this vector by 0.0122 on panel mean (0.7002 against 0.6880), about
+#: two to three sigma. Its recorded delta is SMALLER, +0.0460 against +0.0612, so selecting on strength
+#: rather than on the headline prefers this weaker vector. That trade is the project's own pre-registered
+#: rule, and it is stated rather than hidden.
+#:
+#: It was NOT adopted, because adopting it means every published number -- the depth curve, both oracle
+#: ceilings, the memory horizon, the seed sweep, the primary dataset -- describes a different instrument
+#: from the one the code defaults to. Re-measuring all of it was declined in favour of publishing on the
+#: data in hand. So the honest statement is: the reported effect is measured with a vector that a later,
+#: larger surface run showed to be beatable by roughly two sigma, and anyone forking this project can
+#: re-freeze onto it and reproduce the comparison.
+SELECTED_WEIGHTS = (3.0, 2.0, 0.5, 0.3, 1.5)
 
 
 def _sweep_grid() -> tuple:

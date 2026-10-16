@@ -35,20 +35,47 @@ CHARTJS_VERSION = "4.5.1"
 #: The reference dashboard's visual language as CSS custom properties, lifted rather than invented so
 #: the reports read as one set. The values are literals here on purpose: a token that reads from a theme
 #: file would make the output depend on the environment it was rendered in.
+#: One design system, used by the figures AND the pages, so a PNG next to the text that cites it does
+#: not read as two different projects.
+#:
+#: It is a LIGHT palette on purpose. A dark background with saturated blue/green/red and 8px rounded
+#: cards is the default look of generated dashboards, and it is exactly the thing that made the previous
+#: reports look machine-made. Hairline borders, one accent, and a print-first background read as a
+#: research document instead -- and GitHub renders light, so the figures also match the page they sit on.
+#:
+#: Colours are never the only carrier of meaning: every chart that uses the positive/negative pair also
+#: marks direction with a glyph, and every figure states its numbers in text beside it.
 _TOKENS = {
-    "--bg-primary": "#0f1117",
-    "--bg-card": "#171a23",
-    "--bg-header": "#1e222d",
-    "--text-primary": "#e8eaed",
-    "--text-secondary": "#9aa0ac",
-    "--color-accent1": "#4f9cf9",
-    "--color-accent2": "#52c41a",
-    "--color-accent3": "#faad14",
-    "--color-accent4": "#f5222d",
-    "--positive": "#52c41a",
-    "--negative": "#f5222d",
+    # surfaces -- four steps is enough to separate page, band, card and header without a shadow
+    "--bg-primary": "#ffffff",
+    "--bg-card": "#ffffff",
+    "--bg-header": "#f7f8fa",
+    "--bg-band": "#f2f4f7",
+    # hairlines, never shadows
+    "--border": "#e3e6ea",
+    "--border-strong": "#cbd2d9",
+    # text
+    "--text-primary": "#14181f",
+    "--text-secondary": "#5b6472",
+    "--text-muted": "#8b94a3",
+    # ONE accent. Positive/negative/warning are semantic, not decorative.
+    "--color-accent": "#2563eb",
+    "--color-accent-soft": "#dbe6fd",
+    "--positive": "#0f7b47",
+    "--negative": "#b42318",
+    "--warning": "#a15c07",
+    # neutral series for the categorical charts (matchup matrix, per-strategy bars)
+    "--series-1": "#2563eb",
+    "--series-2": "#5b6472",
+    "--series-3": "#8b94a3",
+    "--series-4": "#a15c07",
+    "--series-5": "#0f7b47",
+    "--series-6": "#7c3aed",
+    "--series-7": "#b42318",
+    # geometry: 4px, not 8. A large radius is the other half of the template look.
+    "--radius": "4px",
     "--gap": "16px",
-    "--radius": "8px",
+    "--measure": "1320px",
 }
 
 
