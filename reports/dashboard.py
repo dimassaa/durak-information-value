@@ -120,6 +120,16 @@ class Document:
                                            "meta": dict(sorted((meta or {}).items()))}))
         return self
 
+    def provenance(self, items) -> "Document":
+        """The block that says where every number on the page came from.
+
+        A research report that does not state its dataset, its instrument and its seed cannot be
+        re-derived by a reader, which is the difference between a result and an assertion. Rendered last
+        and visibly, not as a footnote nobody reads.
+        """
+        self._sections.append(("provenance", {"items": [(str(k), str(v)) for k, v in items]}))
+        return self
+
     def kpi_row(self, items) -> "Document":
         """A row of headline numbers. `items` is a sequence of `(label, value)` pairs, kept in order."""
         self._sections.append(("kpi_row", [(str(label), str(value)) for label, value in items]))
@@ -183,6 +193,15 @@ class Document:
                 parts.append(f'<div class="meta">{meta}</div>')
             return f'<header class="page-header">{"".join(parts)}</header>'
 
+        if kind == "provenance":
+            rows = "".join(
+                f'<div class="prov-row"><span class="prov-key">{_e(k)}</span>'
+                f'<span class="prov-val">{_e(v)}</span></div>'
+                for k, v in payload["items"]
+            )
+            return ('<section class="band provenance"><h2>Sources and method</h2>'
+                    f'<div class="prov-grid">{rows}</div></section>')
+
         if kind == "kpi_row":
             cells = "".join(
                 f'<div class="kpi"><div class="kpi-label">{_e(label)}</div>'
@@ -224,14 +243,19 @@ class Document:
         raise ValueError(f"unknown section kind {kind!r}")
 
     def _render_chart(self, payload: dict) -> str:
+        """Charts are INLINE SVG built from the embedded snapshot.
+
+        The previous version loaded Chart.js from a CDN and drew onto a canvas. That makes the page blank
+        wherever the address is unreachable -- a corporate proxy, a restricted preview, an email client --
+        and a canvas cannot be read by a screen reader, printed at the right size, or saved into a note.
+        Inline SVG is markup: it renders offline, prints, scales, and carries an aria-label.
+        """
         cls = "chart-block full-width" if payload.get("full_width") else "chart-block"
-        return (
-            f'<div class="{cls}"><h2>{_e(payload["title"])}</h2>'
-            f'<canvas id="{_e(payload["id"])}"></canvas>'
-            f'<script>const {_js_id(payload["id"])} = {_j(payload["spec"])};'
-            f'new Chart(document.getElementById("{payload["id"]}"), {_js_id(payload["id"])});</script>'
-            f"</div>"
-        )
+        from reports.svg import spec_to_svg
+
+        svg = payload.get("svg") or spec_to_svg(payload.get("spec") or {},
+                                                 payload.get("title", ""))
+        return f'<figure class="{cls}">{svg}</figure>'
 
     def render(self, path) -> None:
         """Write the complete standalone file. Deterministic: same sections in, same bytes out."""
@@ -241,7 +265,6 @@ class Document:
             '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f"<title>Durak analysis</title>\n"
-            f'<script src="https://cdn.jsdelivr.net/npm/chart.js@{CHARTJS_VERSION}"></script>\n'
             f"<style>{_css()}</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n"
         )
         Path(path).write_text(document, encoding="utf-8")
@@ -259,10 +282,49 @@ def _cell(value) -> str:
     return "" if value is None else str(value)
 
 
+def _extra_css() -> str:
+    """Styles for the inline-SVG charts and for print.
+
+    Print is not an afterthought here: a chart report is read as a PDF, and without this block a two-column
+    row crushes against the 816 CSS pixel page width and the type is sized for a screen.
+    """
+    t = style_tokens()
+    return f"""
+.provenance {{ border-top: 1px solid {t['--border']}; }}
+.prov-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 4px 22px; }}
+.prov-row {{ display: flex; gap: 8px; font-size: 12.5px; padding: 2px 0; }}
+.prov-key {{ color: {t['--text-secondary']}; min-width: 132px; }}
+.prov-val {{ color: {t['--text-primary']}; font-variant-numeric: tabular-nums; }}
+.chart {{ margin: 0; width: 100%; height: auto; overflow: visible; }}
+.chart .c-title {{ font-size: 15px; font-weight: 650; fill: {t['--text-primary']}; }}
+.chart .c-sub {{ font-size: 12px; fill: {t['--text-muted']}; }}
+.chart .c-tick {{ font-size: 11px; fill: {t['--text-muted']};
+  font-variant-numeric: tabular-nums; }}
+.chart .c-cat {{ font-size: 11.5px; fill: {t['--text-secondary']}; }}
+.chart .c-value {{ font-size: 11px; fill: {t['--text-primary']};
+  font-variant-numeric: tabular-nums; font-weight: 600; }}
+.chart .c-legend {{ font-size: 11px; fill: {t['--text-secondary']}; }}
+.chart .c-axis {{ font-size: 11px; fill: {t['--text-secondary']}; }}
+.chart .c-reftext {{ font-size: 10.5px; fill: {t['--warning']}; }}
+.chart .c-grid {{ stroke: {t['--border']}; stroke-width: 1; }}
+.chart .c-ref {{ stroke: {t['--border-strong']}; stroke-width: 1.2; stroke-dasharray: 5 4; }}
+.chart .c-dash {{ stroke: {t['--warning']}; stroke-width: 1.4; stroke-dasharray: 6 4; }}
+@media print {{
+  @page {{ margin: 14mm; }}
+  body {{ font-size: 10.5pt; }}
+  .no-print {{ display: none !important; }}
+  figure, table, .callout {{ break-inside: avoid; }}
+  .band {{ padding: 8pt 0; }}
+  h2 {{ break-after: avoid; }}
+  .chart {{ max-width: 100%; }}
+}}
+"""
+
+
 def _css() -> str:
     """The stylesheet, built from the token block so the tokens are the source of the styling."""
     tokens = style_tokens()
-    declarations = "\n".join(f"  {name}: {value};" for name, value in tokens.items())
+    declarations = "\n".join(f"  {name}: {value};" for name, value in tokens.items()) + _extra_css()
     return f""":root {{
 {declarations}
 }}

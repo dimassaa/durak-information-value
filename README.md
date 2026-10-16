@@ -19,6 +19,7 @@
 - [Dataset](#dataset)
 - [Exploratory Analysis](#exploratory-analysis)
 - [Results](#results)
+- [Full Reports](#full-reports)
 - [What the Effect Depends On](#what-the-effect-depends-on)
 - [Robustness](#robustness)
 - [Fork This and Recompute It](#fork-this-and-recompute-it)
@@ -199,6 +200,22 @@ loser never saw**, which compresses the decisive phase of the game into a single
 50.5% of all rounds are played in the late phase with a mean of 0.9 cards left in the pile, and **2,278,820
 of 2,280,032 games end there — 99.95%**. The opening is nearly irrelevant; the game is decided once nobody
 can draw.
+
+## Full Reports
+
+Three self-contained HTML pages — no CDN, no web fonts, no server, no build step. Open the file from disk
+and it works offline, and print-to-PDF renders the charts at the right size. They embed the same
+`assets/figures/*.png` the README uses, so the two cannot drift apart.
+
+| report | what it carries |
+|---|---|
+| [`reports/out/01_price_of_information.html`](reports/out/01_price_of_information.html) | the headline, its interval, the lower-bound caveat, and where the effect goes |
+| [`reports/out/02_tournament_overview.html`](reports/out/02_tournament_overview.html) | the whole field: matchups, strength, game length, throw-ins, take behaviour, the deck split |
+| [`reports/out/03_rules_and_dealing.html`](reports/out/03_rules_and_dealing.html) | the rules, the dealing, the endgame degeneracy, and what the rule-variant comparison cannot establish |
+
+Every page carries a **Sources and method** block — dataset, deck, seed, evaluation weights, search
+depth, memory horizon, particle budget, and the engine/rules/schema versions — so any number on it can be
+re-derived rather than taken on trust.
 
 ## What the Effect Depends On
 

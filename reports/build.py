@@ -105,6 +105,34 @@ def _fmt_p(value) -> str:
     return f"{value:.4f}"
 
 
+#: Where the committed figures live. The README embeds them by relative path, so the reports must render
+#: into the SAME directory rather than a copy beside them -- two copies is exactly how a README and a report
+#: end up quoting different pictures of the same measurement.
+FIGURE_DIR = Path("assets/figures")
+
+
+def _provenance_items(aggregate_dir) -> list:
+    """What a reader needs in order to re-derive the page: the dataset, the instrument, the versions.
+
+    Read from `meta.json`, which the pipeline writes from the run manifest, so it cannot drift from what
+    was actually measured the way a hand-maintained caption can.
+    """
+    meta = _load(aggregate_dir, "meta")
+    settings = (meta or {}).get("settings") or {}
+    items = [
+        ("games", f"{meta.get('games', 0):,}"),
+        ("deck", f"{meta.get('deck_size', 36)} cards"),
+        ("seed", (meta.get("settings") or {}).get("seed", "fixed")),
+        ("evaluation weights", ", ".join(str(v) for v in (settings.get("eval_weights") or []))),
+        ("search depth", settings.get("search_depth", "2")),
+        ("memory horizon", settings.get("memory_ply", "unbounded")),
+        ("particle budget", settings.get("particle_count", "100")),
+        ("engine / rules / schema",
+         f"{meta.get('engine_version')} / {meta.get('rules_version')} / {meta.get('schema_version')}"),
+    ]
+    return [(k, v) for k, v in items if v not in ("", None)]
+
+
 def build_report_one(aggregate_dir, out_path) -> Path:
     """Report 1: the price of information.
 
@@ -235,6 +263,8 @@ def build_report_one(aggregate_dir, out_path) -> Path:
         doc.quality_block({k: v for k, v in sorted(quality.items()) if k != "metric"})
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.provenance(_provenance_items(aggregate_dir))
+
     doc.render(out_path)
     return out_path
 
@@ -562,6 +592,8 @@ def build_report_two(aggregate_dir, out_path) -> Path:
         })
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.provenance(_provenance_items(aggregate_dir))
+
     doc.render(out_path)
     return out_path
 
@@ -796,6 +828,8 @@ def build_report_three(aggregate_dir, out_path) -> Path:
         doc.quality_block({k: v for k, v in sorted(quality.items()) if k != "metric"})
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.provenance(_provenance_items(aggregate_dir))
+
     doc.render(out_path)
     return out_path
 
@@ -814,6 +848,9 @@ def main(argv=None) -> int:
         build_report_two(aggregate_dir, out_dir / "02_tournament_overview.html"),
         build_report_three(aggregate_dir, out_dir / "03_rules_and_dealing.html"),
     ]
+    # The figures are rendered ONCE into `assets/figures` and every page embeds those same files, so the
+    # README and the reports cannot drift into two truths. `reports.verify_readme` checks the numbers; this
+    # checks that the reports were rebuilt from the same aggregates as the README they link to.
 
     # Figures are optional in the sense that a missing Matplotlib must not take the three HTML
     # reports down with it. They are not optional for the README, which embeds them, so a failure is
@@ -821,7 +858,7 @@ def main(argv=None) -> int:
     try:
         from reports.figures import build_figures
 
-        written.extend(build_figures(aggregate_dir, out_dir / "figures"))
+        written.extend(build_figures(aggregate_dir, FIGURE_DIR))
     except ImportError as exc:  # pragma: no cover - exercised only without Matplotlib
         print(f"figures skipped: {exc}", file=sys.stderr)
 

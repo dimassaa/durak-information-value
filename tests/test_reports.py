@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from reports.dashboard import CHARTJS_VERSION, Document, style_tokens
+from reports.dashboard import Document, style_tokens
 
 
 def _document() -> Document:
@@ -30,8 +30,14 @@ def _document() -> Document:
     doc.header("The Price of Information", "36-card deck, head to head",
                {"games": 40000, "engine_version": 2, "build_date": "2026-10-07"})
     doc.kpi_row([("Delta", "+0.082"), ("n", "40 000"), ("p", "2.3e-07")])
+    # The payload is in the shape the report builder actually emits. The fixture used
+    # `{"labels": [...], "values": [...]}` which Chart.js never accepted and the SVG renderer cannot read
+    # either -- a fixture that does not match production is a test of the fixture.
     doc.chart_block("chart-poi", "Perfect knowledge is worth about eight points",
-                    {"type": "bar", "data": {"labels": ["uniform", "informed"], "values": [0.459, 0.541]}})
+                    {"type": "bar",
+                     "data": {"labels": ["Uninformed", "Informed"],
+                              "datasets": [{"label": "Win rate", "data": [0.47, 0.53]}]},
+                     "options": {"scales": {"y": {"min": 0, "max": 1}}}})
     doc.table(
         ["Strategy", "Win rate"],
         [["GREEDY", 0.953], ["SEARCH_UNIFORM", 0.502], ["SEARCH_INFORMED", 0.513]],
@@ -48,8 +54,30 @@ def test_a_rendered_file_is_valid_standalone_html(tmp_path):
 
     assert html.lstrip().startswith("<!DOCTYPE html>")
     assert html.rstrip().endswith("</html>")
-    assert f'<script src="https://cdn.jsdelivr.net/npm/chart.js@{CHARTJS_VERSION}"></script>' in html
-    assert CHARTJS_VERSION == "4.5.1"
+
+
+def test_a_rendered_page_reaches_out_to_nothing(tmp_path):
+    """Zero external dependencies, asserted rather than intended.
+
+    The page used to pull Chart.js from a CDN. That makes it blank wherever the address is unreachable --
+    a corporate proxy, a restricted preview, an email client, or five years from now -- and a canvas cannot
+    be read by a screen reader or printed at the right size. Every figure is now inline SVG, so the file
+    works with no network at all.
+
+    This asserts the property over the whole document, not one known URL: any `src`/`href` to a remote
+    host fails here, including a dependency added after this test was written.
+    """
+    import re
+
+    path = tmp_path / "report.html"
+    _document().render(path)
+    html = path.read_text(encoding="utf-8")
+
+    remote = re.findall(r'(?:src|href)\s*=\s*["\'](https?:)?//[^"\']+', html)
+    assert not remote, f"the page loads external resources: {remote}"
+    assert "@import" not in html, "a stylesheet import is an external dependency"
+    assert "<canvas" not in html, "canvas is opaque to screen readers and to print sizing"
+    assert "chart.js" not in html.lower()
 
 
 def test_the_css_token_block_is_present(tmp_path):
@@ -90,15 +118,25 @@ def test_sortable_headers_carry_their_sort_key(tmp_path):
     assert matches == ["0"], f"only the declared sort key should be sortable, got {matches}"
 
 
-def test_the_chart_payload_is_embedded_so_the_file_needs_no_server(tmp_path):
+def test_the_chart_data_is_in_the_file_so_it_needs_no_server(tmp_path):
+    """The numbers must be IN the document, not fetched and not computed at view time.
+
+    The page used to embed each chart's payload as a JS constant and hand it to a CDN library, so this
+    asserted `const ... = {...}` was checking the old mechanism rather than the requirement. The
+    requirement is that a reader opening the file offline sees the chart, which is now satisfied by the
+    values being rendered into the markup itself. So the test asserts the VALUES are present.
+    """
     path = tmp_path / "report.html"
     _document().render(path)
     html = path.read_text(encoding="utf-8")
 
-    assert "const " in html and "chart-poi" in html
-    assert '"labels"' in html or "'labels'" in html or html.count("labels") > 0
-    assert "http://" not in html.replace("https://cdn.jsdelivr.net", ""), (
-        "the page must not fetch anything beyond the pinned CDN script"
+    assert "<svg" in html, "a chart must render as inline SVG in the document"
+    assert "Uninformed" in html and "Informed" in html, "the chart's categories must be readable text"
+    for rate in ("0.47", "0.53"):
+        assert rate in html, f"the plotted value {rate} must appear in the file"
+    assert "new Chart(" not in html, "no chart constructor runs at view time"
+    assert "http://" not in html and "https://" not in html, (
+        "the page must not fetch anything; it has to work offline"
     )
 
 
