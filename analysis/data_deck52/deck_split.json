@@ -1,0 +1,58 @@
+{
+  "metric": "deck_split",
+  "missing_decks": [
+    36
+  ],
+  "note": "Rates are marginal within a deck, so they depend on that deck's field. Where only one deck was played, the sensitivity check has not been run and is listed as missing rather than reported as a zero.",
+  "rows": [
+    {
+      "deck_size": 52,
+      "games": 1140016,
+      "participations": 2280032,
+      "strategies": [
+        {
+          "games": 318144,
+          "strategy_id": 1,
+          "win_rate": 0.503857,
+          "wins": 160299
+        },
+        {
+          "games": 371168,
+          "strategy_id": 2,
+          "win_rate": 0.191512,
+          "wins": 71083
+        },
+        {
+          "games": 318144,
+          "strategy_id": 3,
+          "win_rate": 0.6519,
+          "wins": 207398
+        },
+        {
+          "games": 318144,
+          "strategy_id": 4,
+          "win_rate": 0.144545,
+          "wins": 45986
+        },
+        {
+          "games": 318144,
+          "strategy_id": 5,
+          "win_rate": 0.603497,
+          "wins": 191999
+        },
+        {
+          "games": 318144,
+          "strategy_id": 6,
+          "win_rate": 0.618739,
+          "wins": 196848
+        },
+        {
+          "games": 318144,
+          "strategy_id": 7,
+          "win_rate": 0.837366,
+          "wins": 266403
+        }
+      ]
+    }
+  ]
+}

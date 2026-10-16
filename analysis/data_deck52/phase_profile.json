@@ -1,0 +1,57 @@
+{
+  "by_phase": [
+    {
+      "games": 1140016,
+      "mean_deck_remaining": 32.7302,
+      "mean_defenses": 0.904534,
+      "mean_hands_total": 13.4172,
+      "mean_throw_ins": 0.315284,
+      "phase": 0,
+      "rounds": 8041093,
+      "share_of_rounds": 0.225058,
+      "take_rate": 0.410748
+    },
+    {
+      "games": 1140001,
+      "mean_deck_remaining": 16.8738,
+      "mean_defenses": 0.924506,
+      "mean_hands_total": 14.3453,
+      "mean_throw_ins": 0.347706,
+      "phase": 1,
+      "rounds": 14070599,
+      "share_of_rounds": 0.393814,
+      "take_rate": 0.423194
+    },
+    {
+      "games": 1139919,
+      "mean_deck_remaining": 1.5203,
+      "mean_defenses": 0.722864,
+      "mean_hands_total": 12.2346,
+      "mean_throw_ins": 0.257744,
+      "phase": 2,
+      "rounds": 13617360,
+      "share_of_rounds": 0.381129,
+      "take_rate": 0.459787
+    }
+  ],
+  "deck_size": 52,
+  "games_ending_in_phase": [
+    {
+      "games": 30,
+      "phase": 0
+    },
+    {
+      "games": 164,
+      "phase": 1
+    },
+    {
+      "games": 2279838,
+      "phase": 2
+    }
+  ],
+  "metric": "phase_profile",
+  "per_phase_delta": null,
+  "per_phase_delta_admissible": false,
+  "phase_definition": "cut on the draw pile: early, mid, late",
+  "why_not": "every phase variable is produced by the arms' own actions, so conditioning the delta on it selects on the treatment -- the error that made this project retract a curve. The one stratifier fixed before the first card is played is the opening deal's trump count, which is reported in `trump_stratification`."
+}

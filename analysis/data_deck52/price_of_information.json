@@ -1,0 +1,37 @@
+{
+  "comparison": "head_to_head",
+  "deck_size": 52,
+  "delta": {
+    "adjusted_p": 2.98097e-38,
+    "ci": [
+      0.0477133,
+      0.0646886
+    ],
+    "ci_kind": "paired_bootstrap_percentile",
+    "discordant_b": 28001,
+    "discordant_c": 25023,
+    "mcnemar": 2.98097e-38,
+    "point": 0.0561632
+  },
+  "informed": {
+    "ci": [
+      0.523831,
+      0.532329
+    ],
+    "n": 53024,
+    "win_rate": 0.528082,
+    "wins": 28001
+  },
+  "metric": "price_of_information",
+  "undecided_games": 0,
+  "undecided_note": "Undecided games are excluded from every rate rather than counted as losses. A game that hit the round cap has no outcome, and scoring it would invent one.",
+  "uniform": {
+    "ci": [
+      0.467671,
+      0.476169
+    ],
+    "n": 53024,
+    "win_rate": 0.471918,
+    "wins": 25023
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "at_least_one_without_trump_rate": 0.337281,
+  "both_have_trumps": 755510,
+  "deck_sizes": [
+    52
+  ],
+  "first_attacker_wins": 563080,
+  "games": 1140016,
+  "metric": "rules_and_dealing",
+  "regimes": [
+    "RULE_DERIVED"
+  ],
+  "seat0_wins": 570166,
+  "seat1_wins": 569850
+}

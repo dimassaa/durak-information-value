@@ -1,0 +1,76 @@
+{
+  "metric": "take_behaviour",
+  "note": "A voluntary take is a policy choice and a forced take is a rules outcome. The two are reported separately because their sum is not a rate of anything.",
+  "rows": [
+    {
+      "cards_collected": 2925304,
+      "forced_take_rate": 1.0,
+      "forced_takes": 1261706,
+      "games": 318144,
+      "strategy_id": 1,
+      "takes_per_game": 3.96583,
+      "voluntary_take_rate": 0.0,
+      "voluntary_takes": 0
+    },
+    {
+      "cards_collected": 7812374,
+      "forced_take_rate": 0.503802,
+      "forced_takes": 2666748,
+      "games": 371168,
+      "strategy_id": 2,
+      "takes_per_game": 14.261,
+      "voluntary_take_rate": 0.496198,
+      "voluntary_takes": 2626496
+    },
+    {
+      "cards_collected": 1974338,
+      "forced_take_rate": 1.0,
+      "forced_takes": 877136,
+      "games": 318144,
+      "strategy_id": 3,
+      "takes_per_game": 2.75704,
+      "voluntary_take_rate": 0.0,
+      "voluntary_takes": 0
+    },
+    {
+      "cards_collected": 6031088,
+      "forced_take_rate": 0.265514,
+      "forced_takes": 1030786,
+      "games": 318144,
+      "strategy_id": 4,
+      "takes_per_game": 12.2027,
+      "voluntary_take_rate": 0.734486,
+      "voluntary_takes": 2851438
+    },
+    {
+      "cards_collected": 1996256,
+      "forced_take_rate": 0.725016,
+      "forced_takes": 837317,
+      "games": 318144,
+      "strategy_id": 5,
+      "takes_per_game": 3.6301,
+      "voluntary_take_rate": 0.274984,
+      "voluntary_takes": 317577
+    },
+    {
+      "cards_collected": 1712290,
+      "forced_take_rate": 0.614123,
+      "forced_takes": 658657,
+      "games": 318144,
+      "strategy_id": 6,
+      "takes_per_game": 3.37117,
+      "voluntary_take_rate": 0.385877,
+      "voluntary_takes": 413859
+    },
+    {
+      "cards_collected": 3348265,
+      "forced_take_rate": 0.145272,
+      "forced_takes": 287178,
+      "games": 318144,
+      "strategy_id": 7,
+      "takes_per_game": 6.21365,
+      "voluntary_take_rate": 0.854728,
+      "voluntary_takes": 1689657
+    }
+  ]
+}

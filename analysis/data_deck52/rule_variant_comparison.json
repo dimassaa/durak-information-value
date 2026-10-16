@@ -1,0 +1,6 @@
+{
+  "available": false,
+  "metric": "rule_variant_comparison",
+  "note": "Two readings of the throw-in rule, each measured in its own tournament. The rates carry their own denominators because a bare pair of numbers invites a reader to difference them without asking whether the gap exceeds the sampling noise.",
+  "variants": []
+}

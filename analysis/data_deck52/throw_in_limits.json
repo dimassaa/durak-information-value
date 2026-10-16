@@ -1,0 +1,35 @@
+{
+  "at_or_above_cap": 250,
+  "distribution": [
+    {
+      "attacks": 1,
+      "games": 10498
+    },
+    {
+      "attacks": 2,
+      "games": 286256
+    },
+    {
+      "attacks": 3,
+      "games": 737172
+    },
+    {
+      "attacks": 4,
+      "games": 99096
+    },
+    {
+      "attacks": 5,
+      "games": 6744
+    },
+    {
+      "attacks": 6,
+      "games": 250
+    }
+  ],
+  "games": 1140016,
+  "metric": "throw_in_limits",
+  "observed_max": 6,
+  "rule_cap": 6,
+  "rule_expression": "min(defender's current hand, THROWIN_CAP)",
+  "within_rule": true
+}

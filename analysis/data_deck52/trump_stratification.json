@@ -1,0 +1,117 @@
+{
+  "buckets": 10,
+  "caution": "the curve is reportable; no mechanism is. Whether trumps matter through hand homogeneity or through the trump hierarchy is untested and must not appear.",
+  "curve": [
+    {
+      "ci": [
+        0.0126951,
+        0.122313
+      ],
+      "delta": 0.0675039,
+      "games": 28261,
+      "head_to_head_games": 1274,
+      "initial_trumps": 0,
+      "seat0_win_rate": 0.499452
+    },
+    {
+      "ci": [
+        0.0283999,
+        0.0764509
+      ],
+      "delta": 0.0524254,
+      "games": 144237,
+      "head_to_head_games": 6638,
+      "initial_trumps": 1,
+      "seat0_win_rate": 0.498991
+    },
+    {
+      "ci": [
+        0.0397726,
+        0.0728112
+      ],
+      "delta": 0.0562919,
+      "games": 300375,
+      "head_to_head_games": 14034,
+      "initial_trumps": 2,
+      "seat0_win_rate": 0.500431
+    },
+    {
+      "ci": [
+        0.047989,
+        0.0793105
+      ],
+      "delta": 0.0636498,
+      "games": 335072,
+      "head_to_head_games": 15601,
+      "initial_trumps": 3,
+      "seat0_win_rate": 0.500382
+    },
+    {
+      "ci": [
+        0.0324574,
+        0.0712551
+      ],
+      "delta": 0.0518562,
+      "games": 218965,
+      "head_to_head_games": 10182,
+      "initial_trumps": 4,
+      "seat0_win_rate": 0.50013
+    },
+    {
+      "ci": [
+        0.0075915,
+        0.0689541
+      ],
+      "delta": 0.0382728,
+      "games": 87923,
+      "head_to_head_games": 4076,
+      "initial_trumps": 5,
+      "seat0_win_rate": 0.501439
+    },
+    {
+      "ci": [
+        -0.0176631,
+        0.102971
+      ],
+      "delta": 0.042654,
+      "games": 21650,
+      "head_to_head_games": 1055,
+      "initial_trumps": 6,
+      "seat0_win_rate": 0.498199
+    },
+    {
+      "ci": [
+        0.0289195,
+        0.344414
+      ],
+      "delta": 0.186667,
+      "games": 3236,
+      "head_to_head_games": 150,
+      "initial_trumps": 7,
+      "seat0_win_rate": 0.483313
+    },
+    {
+      "ci": [
+        -0.137665,
+        0.906895
+      ],
+      "delta": 0.384615,
+      "games": 287,
+      "head_to_head_games": 13,
+      "initial_trumps": 8,
+      "seat0_win_rate": 0.491289
+    },
+    {
+      "ci": null,
+      "delta": -1.0,
+      "games": 10,
+      "head_to_head_games": 1,
+      "initial_trumps": 9,
+      "seat0_win_rate": 0.7
+    }
+  ],
+  "deck_size": 52,
+  "metric": "trump_stratification",
+  "stratifier": "initial trumps in the deal, both seats, fixed before any move",
+  "stratifier_is_treatment_independent": true
+}

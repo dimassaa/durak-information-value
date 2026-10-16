@@ -1,0 +1,152 @@
+{
+  "games": 1140016,
+  "loser_hand": [
+    {
+      "final_hand": 1,
+      "games": 89319
+    },
+    {
+      "final_hand": 2,
+      "games": 22609
+    },
+    {
+      "final_hand": 3,
+      "games": 190314
+    },
+    {
+      "final_hand": 4,
+      "games": 25475
+    },
+    {
+      "final_hand": 5,
+      "games": 180234
+    },
+    {
+      "final_hand": 6,
+      "games": 19956
+    },
+    {
+      "final_hand": 7,
+      "games": 169897
+    },
+    {
+      "final_hand": 8,
+      "games": 17502
+    },
+    {
+      "final_hand": 9,
+      "games": 124276
+    },
+    {
+      "final_hand": 10,
+      "games": 12020
+    },
+    {
+      "final_hand": 11,
+      "games": 108745
+    },
+    {
+      "final_hand": 12,
+      "games": 7873
+    },
+    {
+      "final_hand": 13,
+      "games": 73321
+    },
+    {
+      "final_hand": 14,
+      "games": 5218
+    },
+    {
+      "final_hand": 15,
+      "games": 43828
+    },
+    {
+      "final_hand": 16,
+      "games": 3251
+    },
+    {
+      "final_hand": 17,
+      "games": 22883
+    },
+    {
+      "final_hand": 18,
+      "games": 1822
+    },
+    {
+      "final_hand": 19,
+      "games": 10861
+    },
+    {
+      "final_hand": 20,
+      "games": 920
+    },
+    {
+      "final_hand": 21,
+      "games": 5115
+    },
+    {
+      "final_hand": 22,
+      "games": 475
+    },
+    {
+      "final_hand": 23,
+      "games": 2257
+    },
+    {
+      "final_hand": 24,
+      "games": 187
+    },
+    {
+      "final_hand": 25,
+      "games": 934
+    },
+    {
+      "final_hand": 26,
+      "games": 84
+    },
+    {
+      "final_hand": 27,
+      "games": 367
+    },
+    {
+      "final_hand": 28,
+      "games": 34
+    },
+    {
+      "final_hand": 29,
+      "games": 143
+    },
+    {
+      "final_hand": 30,
+      "games": 12
+    },
+    {
+      "final_hand": 31,
+      "games": 45
+    },
+    {
+      "final_hand": 32,
+      "games": 3
+    },
+    {
+      "final_hand": 33,
+      "games": 22
+    },
+    {
+      "final_hand": 35,
+      "games": 6
+    },
+    {
+      "final_hand": 37,
+      "games": 6
+    },
+    {
+      "final_hand": 39,
+      "games": 2
+    }
+  ],
+  "metric": "wins_by_final_hand_size",
+  "note": "The LOSER's final hand, because the winner's is empty by definition. A game that ends with the opponent on one card was nearly over; one that ends with them on twelve was not.",
+  "winner_final_hand_is_always_zero": true
+}

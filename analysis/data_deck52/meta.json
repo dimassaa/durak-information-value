@@ -1,0 +1,33 @@
+{
+  "dataset_dir": "datasets/deck52",
+  "engine_version": 2,
+  "games": 1140016,
+  "note": "Every rate in these documents is filtered to the version triple above. A dataset written by a different rules version is present in the Parquet tree and is NOT here.",
+  "primary_deck_size": 52,
+  "rules_version": 2,
+  "schema_version": 4,
+  "settings": {
+    "deck_size": 36,
+    "eval_weights": [
+      3.0,
+      2.0,
+      0.5,
+      0.3,
+      1.5
+    ],
+    "games_per_pairing": 26512,
+    "particle_count": 100,
+    "sample_modulus": 20,
+    "seed": 0,
+    "soft_penalty_lambda": 0.0,
+    "throwin_defense_ranks": true,
+    "workers": 0
+  },
+  "versions_present": [
+    [
+      2,
+      2,
+      4
+    ]
+  ]
+}

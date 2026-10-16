@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import math
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import duckdb
@@ -47,6 +48,27 @@ from durak.strategies import RANDOM, SEARCH_INFORMED, SEARCH_UNIFORM
 #: Spec 8.1's primary metric is pinned to the 36-card deck. The 52-card deck exists in the dataset for
 #: the sensitivity analysis and must not silently enter the headline number.
 PRIMARY_DECK_SIZE = 36
+
+
+@contextmanager
+def deck_scope(deck_size: int):
+    """Temporarily point every query at one deck size.
+
+    The pin exists so the 52-card deck cannot leak into the headline, and hard-coding it had the opposite
+    failure: building aggregates from a 52-card dataset produced documents full of `null` -- not a zero
+    result, an EMPTY one -- because every query filtered on a deck the dataset did not contain. A reader
+    sees a JSON with a key and no number, which is the easiest shape in which to mistake absence for a
+    finding.
+
+    Scoped with try/finally so a failing query cannot leave the pin moved for the next caller.
+    """
+    global PRIMARY_DECK_SIZE
+    previous = PRIMARY_DECK_SIZE
+    PRIMARY_DECK_SIZE = int(deck_size)
+    try:
+        yield PRIMARY_DECK_SIZE
+    finally:
+        PRIMARY_DECK_SIZE = previous
 
 #: Bootstrap resamples for the effect interval. Fixed rather than derived from the data so the number of
 #: resamples is not itself a tuned parameter; the interval's width is stable well below this.
@@ -845,7 +867,41 @@ def _round_for_output(node, digits: int = 6):
     return node
 
 
-def build_all(dataset_dir, out_dir, sweeps_dir=None) -> list:
+def build_all(dataset_dir, out_dir, sweeps_dir=None, deck_size=None) -> list:
+    """Build every aggregate against ONE deck, verified present in the dataset.
+
+    The deck scope has to wrap the whole build, not just the check that validates it: scoping only the
+    check produced documents that recorded `"deck_size": 36` with `n: 0` for a 52-card dataset, because
+    the pin had already been restored before the queries ran. The gate passed and the documents were still
+    empty, which is the combination worth remembering -- a test that passes while the thing it guards is
+    wrong.
+    """
+    scope = deck_scope(deck_size) if deck_size is not None else nullcontext()
+    with scope:
+        _assert_deck_present(dataset_dir, PRIMARY_DECK_SIZE)
+        return _build_all(dataset_dir, out_dir, sweeps_dir)
+
+
+def _assert_deck_present(dataset_dir, target) -> None:
+    """Every query filters on the pinned deck size; a mismatch returns nothing rather than raising.
+
+    A document full of nulls is the easiest shape in which to mistake an absent measurement for a result,
+    so this raises with the deck sizes that ARE there.
+    """
+    present = _connect(dataset_dir).execute(
+        "SELECT DISTINCT deck_size FROM games ORDER BY 1").fetchall()
+    present_sizes = sorted(int(r[0]) for r in present)
+    if not present_sizes:
+        raise ValueError(f"{dataset_dir} has no game rows at all")
+    if target not in present_sizes:
+        raise ValueError(
+            f"{dataset_dir} contains decks {present_sizes} but the queries are pinned to {target}. "
+            f"Pass deck_size= to build against one that is actually there; do not read the resulting "
+            f"nulls as a result."
+        )
+
+
+def _build_all(dataset_dir, out_dir, sweeps_dir=None) -> list:
     """Run every query and write one JSON document per report, plus `meta.json`.
 
     Returns the written paths. `meta.json` carries the run's identity -- versions, counts, settings --

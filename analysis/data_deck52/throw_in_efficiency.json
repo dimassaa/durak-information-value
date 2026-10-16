@@ -1,0 +1,76 @@
+{
+  "metric": "throw_in_efficiency",
+  "note": "Per game, not a raw count: a count tracks the number of games a strategy was scheduled for, which is a property of the tournament and not of the strategy.",
+  "rows": [
+    {
+      "cards_beaten": 4933843,
+      "cards_beaten_per_game": 15.5082,
+      "cards_collected": 2925304,
+      "cards_collected_per_game": 9.19491,
+      "games": 318144,
+      "strategy_id": 1,
+      "throw_ins": 0,
+      "throw_ins_per_game": 0.0
+    },
+    {
+      "cards_beaten": 4909391,
+      "cards_beaten_per_game": 13.2269,
+      "cards_collected": 7812374,
+      "cards_collected_per_game": 21.0481,
+      "games": 371168,
+      "strategy_id": 2,
+      "throw_ins": 1418331,
+      "throw_ins_per_game": 3.82126
+    },
+    {
+      "cards_beaten": 4173385,
+      "cards_beaten_per_game": 13.1179,
+      "cards_collected": 1974338,
+      "cards_collected_per_game": 6.2058,
+      "games": 318144,
+      "strategy_id": 3,
+      "throw_ins": 1609651,
+      "throw_ins_per_game": 5.0595
+    },
+    {
+      "cards_beaten": 4428050,
+      "cards_beaten_per_game": 13.9184,
+      "cards_collected": 6031088,
+      "cards_collected_per_game": 18.9571,
+      "games": 318144,
+      "strategy_id": 4,
+      "throw_ins": 661978,
+      "throw_ins_per_game": 2.08075
+    },
+    {
+      "cards_beaten": 3651173,
+      "cards_beaten_per_game": 11.4765,
+      "cards_collected": 1996256,
+      "cards_collected_per_game": 6.27469,
+      "games": 318144,
+      "strategy_id": 5,
+      "throw_ins": 3029466,
+      "throw_ins_per_game": 9.52231
+    },
+    {
+      "cards_beaten": 3516194,
+      "cards_beaten_per_game": 11.0522,
+      "cards_collected": 1712290,
+      "cards_collected_per_game": 5.38212,
+      "games": 318144,
+      "strategy_id": 6,
+      "throw_ins": 3168053,
+      "throw_ins_per_game": 9.95792
+    },
+    {
+      "cards_beaten": 4513249,
+      "cards_beaten_per_game": 14.1862,
+      "cards_collected": 3348265,
+      "cards_collected_per_game": 10.5244,
+      "games": 318144,
+      "strategy_id": 7,
+      "throw_ins": 1049968,
+      "throw_ins_per_game": 3.30029
+    }
+  ]
+}

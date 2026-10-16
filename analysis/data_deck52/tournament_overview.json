@@ -1,0 +1,83 @@
+{
+  "metric": "tournament_overview",
+  "note": "Marginal rates: they depend on who else played, so they are not comparable across datasets with different strategy palettes.",
+  "rows": [
+    {
+      "ci": [
+        0.502119,
+        0.505594
+      ],
+      "n": 318144,
+      "strategy_id": 1,
+      "undecided_games": 0,
+      "win_rate": 0.503857,
+      "wins": 160299
+    },
+    {
+      "ci": [
+        0.190249,
+        0.192781
+      ],
+      "n": 371168,
+      "strategy_id": 2,
+      "undecided_games": 0,
+      "win_rate": 0.191512,
+      "wins": 71083
+    },
+    {
+      "ci": [
+        0.650243,
+        0.653553
+      ],
+      "n": 318144,
+      "strategy_id": 3,
+      "undecided_games": 0,
+      "win_rate": 0.6519,
+      "wins": 207398
+    },
+    {
+      "ci": [
+        0.143327,
+        0.145771
+      ],
+      "n": 318144,
+      "strategy_id": 4,
+      "undecided_games": 0,
+      "win_rate": 0.144545,
+      "wins": 45986
+    },
+    {
+      "ci": [
+        0.601796,
+        0.605196
+      ],
+      "n": 318144,
+      "strategy_id": 5,
+      "undecided_games": 0,
+      "win_rate": 0.603497,
+      "wins": 191999
+    },
+    {
+      "ci": [
+        0.61705,
+        0.620425
+      ],
+      "n": 318144,
+      "strategy_id": 6,
+      "undecided_games": 0,
+      "win_rate": 0.618739,
+      "wins": 196848
+    },
+    {
+      "ci": [
+        0.83608,
+        0.838644
+      ],
+      "n": 318144,
+      "strategy_id": 7,
+      "undecided_games": 0,
+      "win_rate": 0.837366,
+      "wins": 266403
+    }
+  ]
+}

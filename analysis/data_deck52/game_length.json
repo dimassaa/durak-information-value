@@ -1,0 +1,456 @@
+{
+  "bin_width_rounds": 5,
+  "games": 1140016,
+  "histogram": [
+    {
+      "bin_low": 2,
+      "games": 2
+    },
+    {
+      "bin_low": 3,
+      "games": 1
+    },
+    {
+      "bin_low": 4,
+      "games": 1
+    },
+    {
+      "bin_low": 5,
+      "games": 3
+    },
+    {
+      "bin_low": 6,
+      "games": 4
+    },
+    {
+      "bin_low": 7,
+      "games": 3
+    },
+    {
+      "bin_low": 8,
+      "games": 7
+    },
+    {
+      "bin_low": 9,
+      "games": 8
+    },
+    {
+      "bin_low": 10,
+      "games": 8
+    },
+    {
+      "bin_low": 11,
+      "games": 34
+    },
+    {
+      "bin_low": 12,
+      "games": 149
+    },
+    {
+      "bin_low": 13,
+      "games": 499
+    },
+    {
+      "bin_low": 14,
+      "games": 1358
+    },
+    {
+      "bin_low": 15,
+      "games": 3028
+    },
+    {
+      "bin_low": 16,
+      "games": 5772
+    },
+    {
+      "bin_low": 17,
+      "games": 10219
+    },
+    {
+      "bin_low": 18,
+      "games": 16138
+    },
+    {
+      "bin_low": 19,
+      "games": 23746
+    },
+    {
+      "bin_low": 20,
+      "games": 32743
+    },
+    {
+      "bin_low": 21,
+      "games": 42333
+    },
+    {
+      "bin_low": 22,
+      "games": 50994
+    },
+    {
+      "bin_low": 23,
+      "games": 58936
+    },
+    {
+      "bin_low": 24,
+      "games": 63526
+    },
+    {
+      "bin_low": 25,
+      "games": 65133
+    },
+    {
+      "bin_low": 26,
+      "games": 65088
+    },
+    {
+      "bin_low": 27,
+      "games": 63347
+    },
+    {
+      "bin_low": 28,
+      "games": 60513
+    },
+    {
+      "bin_low": 29,
+      "games": 57991
+    },
+    {
+      "bin_low": 30,
+      "games": 54310
+    },
+    {
+      "bin_low": 31,
+      "games": 50993
+    },
+    {
+      "bin_low": 32,
+      "games": 47238
+    },
+    {
+      "bin_low": 33,
+      "games": 43251
+    },
+    {
+      "bin_low": 34,
+      "games": 38533
+    },
+    {
+      "bin_low": 35,
+      "games": 34347
+    },
+    {
+      "bin_low": 36,
+      "games": 30255
+    },
+    {
+      "bin_low": 37,
+      "games": 26910
+    },
+    {
+      "bin_low": 38,
+      "games": 22971
+    },
+    {
+      "bin_low": 39,
+      "games": 20233
+    },
+    {
+      "bin_low": 40,
+      "games": 17403
+    },
+    {
+      "bin_low": 41,
+      "games": 15190
+    },
+    {
+      "bin_low": 42,
+      "games": 12851
+    },
+    {
+      "bin_low": 43,
+      "games": 11408
+    },
+    {
+      "bin_low": 44,
+      "games": 9836
+    },
+    {
+      "bin_low": 45,
+      "games": 8839
+    },
+    {
+      "bin_low": 46,
+      "games": 7704
+    },
+    {
+      "bin_low": 47,
+      "games": 7242
+    },
+    {
+      "bin_low": 48,
+      "games": 6344
+    },
+    {
+      "bin_low": 49,
+      "games": 5933
+    },
+    {
+      "bin_low": 50,
+      "games": 5255
+    },
+    {
+      "bin_low": 51,
+      "games": 4711
+    },
+    {
+      "bin_low": 52,
+      "games": 4227
+    },
+    {
+      "bin_low": 53,
+      "games": 3752
+    },
+    {
+      "bin_low": 54,
+      "games": 3273
+    },
+    {
+      "bin_low": 55,
+      "games": 2953
+    },
+    {
+      "bin_low": 56,
+      "games": 2562
+    },
+    {
+      "bin_low": 57,
+      "games": 2331
+    },
+    {
+      "bin_low": 58,
+      "games": 2010
+    },
+    {
+      "bin_low": 59,
+      "games": 1801
+    },
+    {
+      "bin_low": 60,
+      "games": 1697
+    },
+    {
+      "bin_low": 61,
+      "games": 1479
+    },
+    {
+      "bin_low": 62,
+      "games": 1255
+    },
+    {
+      "bin_low": 63,
+      "games": 1154
+    },
+    {
+      "bin_low": 64,
+      "games": 1061
+    },
+    {
+      "bin_low": 65,
+      "games": 874
+    },
+    {
+      "bin_low": 66,
+      "games": 804
+    },
+    {
+      "bin_low": 67,
+      "games": 721
+    },
+    {
+      "bin_low": 68,
+      "games": 637
+    },
+    {
+      "bin_low": 69,
+      "games": 551
+    },
+    {
+      "bin_low": 70,
+      "games": 446
+    },
+    {
+      "bin_low": 71,
+      "games": 444
+    },
+    {
+      "bin_low": 72,
+      "games": 397
+    },
+    {
+      "bin_low": 73,
+      "games": 341
+    },
+    {
+      "bin_low": 74,
+      "games": 291
+    },
+    {
+      "bin_low": 75,
+      "games": 227
+    },
+    {
+      "bin_low": 76,
+      "games": 206
+    },
+    {
+      "bin_low": 77,
+      "games": 191
+    },
+    {
+      "bin_low": 78,
+      "games": 164
+    },
+    {
+      "bin_low": 79,
+      "games": 132
+    },
+    {
+      "bin_low": 80,
+      "games": 106
+    },
+    {
+      "bin_low": 81,
+      "games": 116
+    },
+    {
+      "bin_low": 82,
+      "games": 60
+    },
+    {
+      "bin_low": 83,
+      "games": 68
+    },
+    {
+      "bin_low": 84,
+      "games": 49
+    },
+    {
+      "bin_low": 85,
+      "games": 51
+    },
+    {
+      "bin_low": 86,
+      "games": 45
+    },
+    {
+      "bin_low": 87,
+      "games": 38
+    },
+    {
+      "bin_low": 88,
+      "games": 26
+    },
+    {
+      "bin_low": 89,
+      "games": 35
+    },
+    {
+      "bin_low": 90,
+      "games": 15
+    },
+    {
+      "bin_low": 91,
+      "games": 15
+    },
+    {
+      "bin_low": 92,
+      "games": 16
+    },
+    {
+      "bin_low": 93,
+      "games": 8
+    },
+    {
+      "bin_low": 94,
+      "games": 8
+    },
+    {
+      "bin_low": 95,
+      "games": 12
+    },
+    {
+      "bin_low": 96,
+      "games": 10
+    },
+    {
+      "bin_low": 97,
+      "games": 4
+    },
+    {
+      "bin_low": 98,
+      "games": 5
+    },
+    {
+      "bin_low": 99,
+      "games": 2
+    },
+    {
+      "bin_low": 101,
+      "games": 4
+    },
+    {
+      "bin_low": 106,
+      "games": 1
+    }
+  ],
+  "max_rounds": 106,
+  "mean_rounds": 30.3408,
+  "median_rounds": 29.0,
+  "metric": "game_length",
+  "p95_rounds": 48.0,
+  "participations": 2280032,
+  "per_strategy": [
+    {
+      "games": 318144,
+      "mean_rounds": 27.8334,
+      "p95_rounds": 38.0,
+      "strategy_id": 1
+    },
+    {
+      "games": 371168,
+      "mean_rounds": 38.2004,
+      "p95_rounds": 58.0,
+      "strategy_id": 2
+    },
+    {
+      "games": 318144,
+      "mean_rounds": 26.1222,
+      "p95_rounds": 36.0,
+      "strategy_id": 3
+    },
+    {
+      "games": 318144,
+      "mean_rounds": 33.6205,
+      "p95_rounds": 56.0,
+      "strategy_id": 4
+    },
+    {
+      "games": 318144,
+      "mean_rounds": 27.1391,
+      "p95_rounds": 40.0,
+      "strategy_id": 5
+    },
+    {
+      "games": 318144,
+      "mean_rounds": 27.5612,
+      "p95_rounds": 41.0,
+      "strategy_id": 6
+    },
+    {
+      "games": 318144,
+      "mean_rounds": 30.5991,
+      "p95_rounds": 47.0,
+      "strategy_id": 7
+    }
+  ]
+}

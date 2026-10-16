@@ -1,0 +1,67 @@
+{
+  "metric": "opponent_independent_strength",
+  "note": "Against RANDOM only, so the rate does not move when the strategy palette changes. RANDOM's own row is omitted: its rate against RANDOM is the symmetry baseline, not a measurement.",
+  "opponent": 2,
+  "rows": [
+    {
+      "ci": [
+        0.934908,
+        0.94072
+      ],
+      "n": 26512,
+      "strategy_id": 1,
+      "win_rate": 0.937877,
+      "wins": 24865
+    },
+    {
+      "ci": [
+        0.977115,
+        0.980576
+      ],
+      "n": 26512,
+      "strategy_id": 3,
+      "win_rate": 0.978915,
+      "wins": 25953
+    },
+    {
+      "ci": [
+        0.333004,
+        0.344397
+      ],
+      "n": 26512,
+      "strategy_id": 4,
+      "win_rate": 0.338677,
+      "wins": 8979
+    },
+    {
+      "ci": [
+        0.957592,
+        0.962311
+      ],
+      "n": 26512,
+      "strategy_id": 5,
+      "win_rate": 0.960018,
+      "wins": 25452
+    },
+    {
+      "ci": [
+        0.958097,
+        0.962787
+      ],
+      "n": 26512,
+      "strategy_id": 6,
+      "win_rate": 0.960508,
+      "wins": 25465
+    },
+    {
+      "ci": [
+        0.983136,
+        0.986096
+      ],
+      "n": 26512,
+      "strategy_id": 7,
+      "win_rate": 0.984686,
+      "wins": 26106
+    }
+  ]
+}

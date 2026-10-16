@@ -1,0 +1,374 @@
+{
+  "metric": "pairwise_matchups",
+  "note": "One row per unordered pair, both seat orders folded in, so neither rate moves when the strategy palette changes. This is the metric to quote across studies; the marginal rates in tournament_overview are not. The self_play rows are a seat check, not matchups: a strategy against itself has no strength to measure.",
+  "rows": [
+    {
+      "ci_a": [
+        0.936155,
+        0.940253
+      ],
+      "ci_b": [
+        0.059747,
+        0.0638454
+      ],
+      "games": 53024,
+      "strategy_a": 1,
+      "strategy_b": 2,
+      "win_rate_a": 0.938236,
+      "win_rate_b": 0.0617645,
+      "wins_a": 49749,
+      "wins_b": 3275
+    },
+    {
+      "ci_a": [
+        0.290399,
+        0.298157
+      ],
+      "ci_b": [
+        0.701843,
+        0.709601
+      ],
+      "games": 53024,
+      "strategy_a": 1,
+      "strategy_b": 3,
+      "win_rate_a": 0.294263,
+      "win_rate_b": 0.705737,
+      "wins_a": 15603,
+      "wins_b": 37421
+    },
+    {
+      "ci_a": [
+        0.875642,
+        0.881205
+      ],
+      "ci_b": [
+        0.118795,
+        0.124358
+      ],
+      "games": 53024,
+      "strategy_a": 1,
+      "strategy_b": 4,
+      "win_rate_a": 0.878451,
+      "win_rate_b": 0.121549,
+      "wins_a": 46579,
+      "wins_b": 6445
+    },
+    {
+      "ci_a": [
+        0.388786,
+        0.3971
+      ],
+      "ci_b": [
+        0.6029,
+        0.611214
+      ],
+      "games": 53024,
+      "strategy_a": 1,
+      "strategy_b": 5,
+      "win_rate_a": 0.392935,
+      "win_rate_b": 0.607065,
+      "wins_a": 20835,
+      "wins_b": 32189
+    },
+    {
+      "ci_a": [
+        0.393435,
+        0.401766
+      ],
+      "ci_b": [
+        0.598234,
+        0.606565
+      ],
+      "games": 53024,
+      "strategy_a": 1,
+      "strategy_b": 6,
+      "win_rate_a": 0.397594,
+      "win_rate_b": 0.602406,
+      "wins_a": 21082,
+      "wins_b": 31942
+    },
+    {
+      "ci_a": [
+        0.118907,
+        0.124472
+      ],
+      "ci_b": [
+        0.875528,
+        0.881093
+      ],
+      "games": 53024,
+      "strategy_a": 1,
+      "strategy_b": 7,
+      "win_rate_a": 0.121662,
+      "win_rate_b": 0.878338,
+      "wins_a": 6451,
+      "wins_b": 46573
+    },
+    {
+      "ci_a": [
+        0.0202993,
+        0.0227694
+      ],
+      "ci_b": [
+        0.977231,
+        0.979701
+      ],
+      "games": 53024,
+      "strategy_a": 2,
+      "strategy_b": 3,
+      "win_rate_a": 0.0214997,
+      "win_rate_b": 0.9785,
+      "wins_a": 1140,
+      "wins_b": 51884
+    },
+    {
+      "ci_a": [
+        0.658172,
+        0.666223
+      ],
+      "ci_b": [
+        0.333777,
+        0.341828
+      ],
+      "games": 53024,
+      "strategy_a": 2,
+      "strategy_b": 4,
+      "win_rate_a": 0.66221,
+      "win_rate_b": 0.33779,
+      "wins_a": 35113,
+      "wins_b": 17911
+    },
+    {
+      "ci_a": [
+        0.0382365,
+        0.0415677
+      ],
+      "ci_b": [
+        0.958432,
+        0.961764
+      ],
+      "games": 53024,
+      "strategy_a": 2,
+      "strategy_b": 5,
+      "win_rate_a": 0.0398687,
+      "win_rate_b": 0.960131,
+      "wins_a": 2114,
+      "wins_b": 50910
+    },
+    {
+      "ci_a": [
+        0.0378669,
+        0.041183
+      ],
+      "ci_b": [
+        0.958817,
+        0.962133
+      ],
+      "games": 53024,
+      "strategy_a": 2,
+      "strategy_b": 6,
+      "win_rate_a": 0.0394916,
+      "win_rate_b": 0.960508,
+      "wins_a": 2094,
+      "wins_b": 50930
+    },
+    {
+      "ci_a": [
+        0.0147224,
+        0.0168429
+      ],
+      "ci_b": [
+        0.983157,
+        0.985278
+      ],
+      "games": 53024,
+      "strategy_a": 2,
+      "strategy_b": 7,
+      "win_rate_a": 0.0157476,
+      "win_rate_b": 0.984252,
+      "wins_a": 835,
+      "wins_b": 52189
+    },
+    {
+      "ci_a": [
+        0.908893,
+        0.913732
+      ],
+      "ci_b": [
+        0.0862682,
+        0.0911073
+      ],
+      "games": 53024,
+      "strategy_a": 3,
+      "strategy_b": 4,
+      "win_rate_a": 0.911342,
+      "win_rate_b": 0.088658,
+      "wins_a": 48323,
+      "wins_b": 4701
+    },
+    {
+      "ci_a": [
+        0.520831,
+        0.529332
+      ],
+      "ci_b": [
+        0.470668,
+        0.479169
+      ],
+      "games": 53024,
+      "strategy_a": 3,
+      "strategy_b": 5,
+      "win_rate_a": 0.525083,
+      "win_rate_b": 0.474917,
+      "wins_a": 27842,
+      "wins_b": 25182
+    },
+    {
+      "ci_a": [
+        0.516567,
+        0.525071
+      ],
+      "ci_b": [
+        0.474929,
+        0.483433
+      ],
+      "games": 53024,
+      "strategy_a": 3,
+      "strategy_b": 6,
+      "win_rate_a": 0.520821,
+      "win_rate_b": 0.479179,
+      "wins_a": 27616,
+      "wins_b": 25408
+    },
+    {
+      "ci_a": [
+        0.266154,
+        0.273711
+      ],
+      "ci_b": [
+        0.726289,
+        0.733846
+      ],
+      "games": 53024,
+      "strategy_a": 3,
+      "strategy_b": 7,
+      "win_rate_a": 0.269916,
+      "win_rate_b": 0.730084,
+      "wins_a": 14312,
+      "wins_b": 38712
+    },
+    {
+      "ci_a": [
+        0.139309,
+        0.145256
+      ],
+      "ci_b": [
+        0.854744,
+        0.860691
+      ],
+      "games": 53024,
+      "strategy_a": 4,
+      "strategy_b": 5,
+      "win_rate_a": 0.142256,
+      "win_rate_b": 0.857744,
+      "wins_a": 7543,
+      "wins_b": 45481
+    },
+    {
+      "ci_a": [
+        0.139851,
+        0.145807
+      ],
+      "ci_b": [
+        0.854193,
+        0.860149
+      ],
+      "games": 53024,
+      "strategy_a": 4,
+      "strategy_b": 6,
+      "win_rate_a": 0.142803,
+      "win_rate_b": 0.857197,
+      "wins_a": 7572,
+      "wins_b": 45452
+    },
+    {
+      "ci_a": [
+        0.0326972,
+        0.0357922
+      ],
+      "ci_b": [
+        0.964208,
+        0.967303
+      ],
+      "games": 53024,
+      "strategy_a": 4,
+      "strategy_b": 7,
+      "win_rate_a": 0.0342109,
+      "win_rate_b": 0.965789,
+      "wins_a": 1814,
+      "wins_b": 51210
+    },
+    {
+      "ci_a": [
+        0.467671,
+        0.476169
+      ],
+      "ci_b": [
+        0.523831,
+        0.532329
+      ],
+      "games": 53024,
+      "strategy_a": 5,
+      "strategy_b": 6,
+      "win_rate_a": 0.471918,
+      "win_rate_b": 0.528082,
+      "wins_a": 25023,
+      "wins_b": 28001
+    },
+    {
+      "ci_a": [
+        0.245544,
+        0.252908
+      ],
+      "ci_b": [
+        0.747092,
+        0.754456
+      ],
+      "games": 53024,
+      "strategy_a": 5,
+      "strategy_b": 7,
+      "win_rate_a": 0.249208,
+      "win_rate_b": 0.750792,
+      "wins_a": 13214,
+      "wins_b": 39810
+    },
+    {
+      "ci_a": [
+        0.281233,
+        0.288918
+      ],
+      "ci_b": [
+        0.711082,
+        0.718767
+      ],
+      "games": 53024,
+      "strategy_a": 6,
+      "strategy_b": 7,
+      "win_rate_a": 0.28506,
+      "win_rate_b": 0.71494,
+      "wins_a": 15115,
+      "wins_b": 37909
+    }
+  ],
+  "self_play": [
+    {
+      "ci": [
+        0.190249,
+        0.192781
+      ],
+      "games": 371168,
+      "strategy_id": 2,
+      "win_rate": 0.191512
+    }
+  ]
+}

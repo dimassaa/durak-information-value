@@ -1,0 +1,51 @@
+{
+  "games": 1140016,
+  "metric": "endgame_degeneracy",
+  "note": "The win check runs before the defender responds, so a last-card attack ends the game unanswered. The rate is a property of the documented rule set (spec 3.4), not a defect, and it compresses the endgame.",
+  "per_strategy": [
+    {
+      "games": 318144,
+      "single_card_win_rate": 0.488722,
+      "single_card_wins": 155484,
+      "strategy_id": 1
+    },
+    {
+      "games": 371168,
+      "single_card_win_rate": 0.176847,
+      "single_card_wins": 65640,
+      "strategy_id": 2
+    },
+    {
+      "games": 318144,
+      "single_card_win_rate": 0.580187,
+      "single_card_wins": 184583,
+      "strategy_id": 3
+    },
+    {
+      "games": 318144,
+      "single_card_win_rate": 0.125355,
+      "single_card_wins": 39881,
+      "strategy_id": 4
+    },
+    {
+      "games": 318144,
+      "single_card_win_rate": 0.448586,
+      "single_card_wins": 142715,
+      "strategy_id": 5
+    },
+    {
+      "games": 318144,
+      "single_card_win_rate": 0.461678,
+      "single_card_wins": 146880,
+      "strategy_id": 6
+    },
+    {
+      "games": 318144,
+      "single_card_win_rate": 0.836382,
+      "single_card_wins": 266090,
+      "strategy_id": 7
+    }
+  ],
+  "single_card_attack_win_rate": 0.878297,
+  "single_card_attack_wins": 1001273
+}
