@@ -200,21 +200,22 @@ def gates(positions, depth):
         sys.exit(f"the incumbent changes no decision against a flat vector on {len(positions)} positions, "
                  f"so the probe cannot detect any vector. The gate is broken, not the weights.")
 
-    inert = []
-    for label, weights in VARIANTS:
-        if max(abs(a - b) for a, b in zip(weights, incumbent)) < 1e-12:
-            print(f"  gate {label:<24} IS the incumbent -- reference row", flush=True)
-            continue
-        diff = differing(positions, weights, incumbent, depth)
-        print(f"  gate {label:<24} differs from the incumbent in {diff:>3} of {len(positions)} positions",
-              flush=True)
-        if diff == 0:
-            inert.append(label)
-    if inert:
-        print(f"  WARNING {inert} change no decision at depth {depth} on {len(positions)} opening "
-              f"positions. Their rows are expected to reproduce the incumbent's, which is a result about "
-              f"those terms rather than a fault. Carrying on, and reporting them as measured.",
-              flush=True)
+    # Gate the vector THIS PROCESS IS PLAYING, taken from the environment, not the R3 list.
+    #
+    # It used to iterate `VARIANTS`, which is the sweep's own twelve-point list. On the R3 sweep that is
+    # the same set, so the gate did its job. On the surface sweep it is a DIFFERENT set, and every one of
+    # the nine surface runs printed its warning about `deck_3x` -- a vector from R3, not the one being
+    # measured. So the only check that could catch a no-op vector was examining a different vector, and
+    # all nine surface runs passed a gate that never looked at them.
+    measured = tuple(float(v) for v in os.environ["DURAK_EVAL_WEIGHTS"].split(","))
+    label = os.environ.get("SWEEP_LABEL", "measured vector")
+    diff = differing(positions, measured, incumbent, depth)
+    print(f"  gate measured vector {label:<24} differs from the incumbent in {diff:>3} of "
+          f"{len(positions)} positions", flush=True)
+    if diff == 0 and max(abs(a - b) for a, b in zip(measured, incumbent)) > 1e-12:
+        sys.exit(f"the vector being measured ({label} = {measured}) changes no decision against the "
+                 f"incumbent on {len(positions)} opening positions, so its row would be a duplicate of "
+                 f"the incumbent's wearing a new label. Fix the vector.")
 
 
 def arms_differ() -> None:

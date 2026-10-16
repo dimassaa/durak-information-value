@@ -142,7 +142,12 @@ def oracle_ceilings(results_dir: Path) -> dict:
 
 def weight_sweep(results_dir: Path) -> dict:
     """R3: eleven vectors, selected on strength. The delta is recorded, never the criterion."""
-    directory = Path(results_dir) / "weights"
+    return _variants_by_strength(Path(results_dir) / "weights", "weight_sweep",
+                                 note="selection is on panel strength; the delta at every vector is "
+                                      "recorded and published across all of them")
+
+
+def _variants_by_strength(directory: Path, metric: str, note: str) -> dict:
     variants = []
     for path in sorted(directory.glob("*.txt")):
         point = _curve_point(_read(path))
@@ -159,13 +164,27 @@ def weight_sweep(results_dir: Path) -> dict:
     ranked = sorted((v for v in variants if v["panel_mean"] is not None),
                     key=lambda v: v["panel_mean"], reverse=True)
     return {
-        "metric": "weight_sweep",
+        "metric": metric,
+        "note": note,
         "variants_measured": len(variants),
         "selection_criterion": "absolute strength against a fixed panel, never the delta",
         "by_panel_strength": ranked,
         "selected": ranked[0]["label"] if ranked else None,
         "selected_weights": ranked[0]["weights"] if ranked else None,
     }
+
+
+def weight_surface(results_dir: Path) -> dict:
+    """R4: the surface around the selected vector, at HALF the ray sweep's games per opponent.
+
+    The scale difference is carried into the document rather than left for a reader to assume away: the
+    ray sweep measured 10,000 games per opponent and this 3,000, so a panel rate here carries roughly
+    twice the interval width. A vector that beats the frozen one by less than the combined interval has
+    not been shown to beat it.
+    """
+    return _variants_by_strength(Path(results_dir) / "surface", "weight_surface",
+                                 note="measured at half the ray sweep's games per opponent, so panel "
+                                      "rates here are not directly comparable with `weight_sweep`")
 
 
 def memory_horizon(results_dir: Path) -> dict:
@@ -247,6 +266,7 @@ FAMILIES = {
     "depth_curve": depth_curve,
     "oracle_ceiling": oracle_ceilings,
     "weight_sweep": weight_sweep,
+    "weight_surface": weight_surface,
     "memory_horizon": memory_horizon,
     "seed_robustness": seed_robustness,
     "self_play": self_play,
