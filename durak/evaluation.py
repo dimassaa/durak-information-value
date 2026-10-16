@@ -73,7 +73,12 @@ EVAL_WEIGHTS = (1.0, 2.0, 0.5, 0.3, 1.5)
 #: Why the distinction matters here: the depth curve was first measured with `EVAL_WEIGHTS`, which this
 #: sweep ranks sixth of eleven. A curve from a rejected instrument describes that instrument, so the
 #: curve was re-measured rather than published as the project's headline.
-SELECTED_WEIGHTS = (3.0, 2.0, 0.5, 0.3, 1.5)
+#: **The stronger instrument has the SMALLER headline: +0.0460 against +0.0612.** That is the selection
+#: rule working rather than failing, and it is stated here because selecting on the delta would have kept
+#: the weaker vector and called it an improvement. Everything measured under `cards_3x` -- the depth curve,
+#: both oracle ceilings, the memory horizon, the seed sweep -- describes THAT vector, and was re-measured
+#: rather than published beside a headline from this one.
+SELECTED_WEIGHTS = (3.0, 2.0, 0.5, 0.3, 0.5)
 
 
 def _sweep_grid() -> tuple:
